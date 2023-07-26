@@ -1,54 +1,14 @@
 import numpy as np
 import cv2
+from numpy.random import random
 
-
-class HashMap:
-    def __init__(self):
-        self.Map = dict()
-
-    def __getitem__(self, key):
-        return self.Map[key]
-
-    def __setitem__(self, key, value):
-        self.Map[key] = value
-
-    def __contains__(self, key):
-        return key in self.Map
-
-    def __len__(self):
-        return len(self.Map)
-
-    def __iter__(self):
-        return iter(self.Map)
-
-    def __delitem__(self, key):
-        del self.Map[key]
-
-
-class FBuilding:
-    def __init__(self):
-        self.Nodes = [0, 0]
-        self.Type = 0
-        self.Radius = 5
-        self.ConnectedToRoad = False
-        self.OccupiedNodes = []
-
-
-class FParcel:
-    def __init__(self):
-        self.Source = 0
-        self.Direction = [1, 0]
-        self.ForwardNodes = []
-
-
-# 0: Land, 1: Road, 2: Cross, 3: Building
+# 0: Land, 1: Road, 2: Cross, 3: Building, 4: Unavailable
 Landmarks: np.ndarray
-Buildings = []
 Parcels = []
 
 
 def load_data_from_png(path):
-    global Landmarks, Buildings
+    global Landmarks
 
     img = cv2.imread(path)
     Landmarks = np.zeros((img.shape[1], img.shape[0]), np.uint8)
@@ -57,7 +17,7 @@ def load_data_from_png(path):
             if img[y, x, 0] == 255:
                 Landmarks[x, y] = 1
             elif img[y, x, 1] == 255:
-                Landmarks[x, y] = 2
+                Landmarks[x, y] = 1
             elif img[y, x, 2] == 255:
                 Landmarks[x, y] = 3
 
@@ -91,33 +51,141 @@ def GetNearestNode(Node, Nodes):
     return MinNode
 
 
+def Normalize(Node):
+    Magnitude = np.sqrt(Node[0] * Node[0] + Node[1] * Node[1])
+    return [Node[0] / Magnitude, Node[1] / Magnitude]
+
+
+def Get8Neighbors(Node):
+    global Landmarks
+    x, y = Landmarks.shape
+    if 0 < Node[0] < x - 1 and 0 < Node[1] < y - 1:
+        return np.array([[Node[0] - 1, Node[1] - 1], [Node[0], Node[1] - 1], [Node[0] + 1, Node[1] - 1],
+                         [Node[0] - 1, Node[1]],                             [Node[0] + 1, Node[1]],
+                         [Node[0] - 1, Node[1] + 1], [Node[0], Node[1] + 1], [Node[0] + 1, Node[1] + 1]])
+    return np.array([])
+
+
+def Get4Neighbors(Node):
+    global Landmarks
+    x, y = Landmarks.shape
+    if 0 < Node[0] < x - 1 and 0 < Node[1] < y - 1:
+        return np.array([[Node[0] - 1, Node[1]], [Node[0], Node[1] + 1], [Node[0] + 1, Node[1]], [Node[0], Node[1] - 1]])
+    return np.array([])
+
+
+def RoadConquestGrowOnOneSide(Index, Node, Radius, OccupiedMap: dict):
+    global Landmarks, Parcels
+
+    OccupiedByMe = []
+    OccupiedByOther = []
+
+    IRadius = int(Radius)
+    while IRadius > 0:
+        if Landmarks[Node[0], Node[1]] not in [0, 4]:
+            return
+        if Landmarks[Node[0], Node[1]] == 0:
+            Landmarks[Node[0], Node[1]] = 5
+            OccupiedByMe.append(Node)
+            Parcels[Index].append(Node)
+            OccupiedMap[Node[0], Node[1]] = Index
+        else:
+            OccupiedByOther.append(Node)
+        IRadius -= 1
+
+        Neighbors = Get4Neighbors(Node)
+        for Col, Row in Neighbors:
+            if Landmarks[Col, Row] in [0, 4]:
+                Neighbors8 = Get8Neighbors([Col, Row])
+                if len(Neighbors8) == 0:
+                    continue
+                # exclude the sink point
+                if (Landmarks[Neighbors8[1, 0], Neighbors8[1, 1]] == 1 and Landmarks[Neighbors8[6, 0], Neighbors8[6, 1]] == 1) or \
+                        (Landmarks[Neighbors8[3, 0], Neighbors8[3, 1]] == 1 and Landmarks[Neighbors8[4, 0], Neighbors8[4, 1]] == 1):
+                    continue
+                if np.any(Landmarks[Neighbors8[:, 0], Neighbors8[:, 1]] == 1):
+                    Node = [Col, Row]
+                    break
+        else:
+            break
+
+    for i in range(len(OccupiedByOther) // 2):
+        Parcels[Index].append(OccupiedByOther[i])
+        Parcels[OccupiedMap[OccupiedByOther[i][0], OccupiedByOther[i][1]]].remove(OccupiedByOther[i])
+        OccupiedMap[OccupiedByOther[i][0], OccupiedByOther[i][1]] = Index
+    for n in OccupiedByMe:
+        Landmarks[n[0], n[1]] = 4
+
+
+def RoadConquest(Index, Node, Radius, OccupiedMap: dict):
+    global Landmarks, Parcels
+
+    RoadNodes = GetNodesInRadius(Node, Radius, 1)
+    if len(RoadNodes) == 0:
+        return
+
+    NearestNode = GetNearestNode(Node, RoadNodes)
+    Direction = Normalize([Node[0] - NearestNode[0], Node[1] - NearestNode[1]])
+
+    # the nearest node determines that the root node is not on the road
+    # and there must be 2 free nodes on both sides of the root node
+    RootNode = [round(NearestNode[0] + Direction[0]), round(NearestNode[1] + Direction[1])]
+    if Landmarks[RootNode[0], RootNode[1]] != 0:
+        return
+
+    Neighbors = Get4Neighbors(RootNode)
+    StartNodes = []
+    for Col, Row in Neighbors:
+        if Landmarks[Col, Row] in [0, 4]:
+            Neighbors8 = Get8Neighbors([Col, Row])
+            if len(Neighbors8) == 0:
+                continue
+            if np.any(Landmarks[Neighbors8[:, 0], Neighbors8[:, 1]] == 1):
+                StartNodes.append([Col, Row])
+
+    if len(StartNodes) != 2:
+        return
+
+    Landmarks[RootNode[0], RootNode[1]] = 5
+    OccupiedMap[RootNode[0], RootNode[1]] = Index
+    Parcels[Index].append(RootNode)
+
+    RoadConquestGrowOnOneSide(Index, StartNodes[0], Radius, OccupiedMap)
+    RoadConquestGrowOnOneSide(Index, StartNodes[1], Radius, OccupiedMap)
+
+    Landmarks[RootNode[0], RootNode[1]] = 4
+
+
 def GenerateParcels():
     pass
 
 
-def GenerateOnParcel(Node, Radius, Source, OccupiedMap: HashMap):
-    global Landmarks, Buildings, Parcels
-
-    RoadNodes = GetNodesInRadius(Node, Radius, 1)
-    NearestNode = GetNearestNode(Node, RoadNodes)
-
-    
-
-    return RoadNodes, NearestNode
+def GenerateOnParcel():
+    pass
 
 
 if __name__ == '__main__':
     load_data_from_png('parcel_test.png')
 
     img = cv2.imread('parcel_test.png')
-    center = [30, 21]
-    nodes, nearest_node = GenerateOnParcel(center, 5, 0, HashMap())
-    for node in nodes:
-        img[node[1], node[0]] = [255, 255, 255]
-    img[nearest_node[1], nearest_node[0]] = [0, 255, 255]
-    img[center[1], center[0]] = [255, 255, 0]
+    hashmap = dict()
+
+    buildings = np.where(img[:, :, 2] == 255)
+    size = len(buildings[0])
+    Parcels = [[] for i in range(size)]
+
+    color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size)]
+
+    for i in range(size):
+        RoadConquest(i, [buildings[1][i], buildings[0][i]], 5, hashmap)
+
+    # for key, value in hashmap.items():
+    #     img[key[1], key[0]] = color[value]
+
+    for i in range(size):
+        for n in Parcels[i]:
+            img[n[1], n[0]] = color[i]
+
     img = cv2.resize(img, (img.shape[1] * 10, img.shape[0] * 10), interpolation=cv2.INTER_NEAREST)
     cv2.imshow('img', img)
     cv2.waitKey(0)
-
-
