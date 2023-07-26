@@ -74,6 +74,19 @@ def Get4Neighbors(Node):
     return np.array([])
 
 
+def LeastSquareLineFitting(Nodes):
+    n = len(Nodes)
+    x = sum([x for x, _ in Nodes])
+    y = sum([y for _, y in Nodes])
+    x2 = sum([x * x for x, _ in Nodes])
+    xy = sum([x * y for x, y in Nodes])
+    y2 = sum([y * y for _, y in Nodes])
+    p = (n * xy - x * y) ** 2
+    q = (n * x2 - x * x) * (n * y2 - y * y)
+    r = 1 if q == 0 else np.sqrt(p / q)
+    print(n, x, y, x2, xy, y2, p, q, r)
+
+
 def RoadConquestGrowOnOneSide(Index, Node, Radius, OccupiedMap: dict):
     global Landmarks, Parcels
 
@@ -93,8 +106,8 @@ def RoadConquestGrowOnOneSide(Index, Node, Radius, OccupiedMap: dict):
             OccupiedByOther.append(Node)
         IRadius -= 1
 
-        Neighbors = Get4Neighbors(Node)
-        for Col, Row in Neighbors:
+        Neighbors4 = Get4Neighbors(Node)
+        for Col, Row in Neighbors4:
             if Landmarks[Col, Row] in [0, 4]:
                 Neighbors8 = Get8Neighbors([Col, Row])
                 if len(Neighbors8) == 0:
@@ -117,6 +130,30 @@ def RoadConquestGrowOnOneSide(Index, Node, Radius, OccupiedMap: dict):
         Landmarks[n[0], n[1]] = 4
 
 
+def RoadConquestSimplify(Index, Radius, OccupiedMap: dict):
+    global Landmarks, Parcels
+
+    # remove the nodes that are diagonal to the sink point
+    IndicesToRemove = []
+    for i in range(len(Parcels[Index])):
+        Neighbors4 = Get4Neighbors(Parcels[Index][i])
+        if np.any(Landmarks[Neighbors4[:, 0], Neighbors4[:, 1]] == 1):
+            continue
+        if (Landmarks[Neighbors4[0, 0], Neighbors4[0, 1]] == Landmarks[Neighbors4[2, 0], Neighbors4[2, 1]] == 4) or \
+                (Landmarks[Neighbors4[1, 0], Neighbors4[1, 1]] == Landmarks[Neighbors4[3, 0], Neighbors4[3, 1]] == 4):
+            continue
+        IndicesToRemove.append(i)
+    for i in reversed(IndicesToRemove):
+        Landmarks[Parcels[Index][i][0], Parcels[Index][i][1]] = 0
+        OccupiedMap.pop((Parcels[Index][i][0], Parcels[Index][i][1]))
+        Parcels[Index].pop(i)
+
+    # restruct the line that is too curvy
+    # if len(Parcels[Index]) < 3:
+    #     return
+    # LeastSquareLineFitting(Parcels[Index])
+
+
 def RoadConquest(Index, Node, Radius, OccupiedMap: dict):
     global Landmarks, Parcels
 
@@ -133,16 +170,16 @@ def RoadConquest(Index, Node, Radius, OccupiedMap: dict):
     if Landmarks[RootNode[0], RootNode[1]] != 0:
         return
 
-    Neighbors = Get4Neighbors(RootNode)
+    # find the start nodes on both sides
+    Neighbors4 = Get4Neighbors(RootNode)
     StartNodes = []
-    for Col, Row in Neighbors:
+    for Col, Row in Neighbors4:
         if Landmarks[Col, Row] in [0, 4]:
             Neighbors8 = Get8Neighbors([Col, Row])
             if len(Neighbors8) == 0:
                 continue
             if np.any(Landmarks[Neighbors8[:, 0], Neighbors8[:, 1]] == 1):
                 StartNodes.append([Col, Row])
-
     if len(StartNodes) != 2:
         return
 
@@ -150,10 +187,14 @@ def RoadConquest(Index, Node, Radius, OccupiedMap: dict):
     OccupiedMap[RootNode[0], RootNode[1]] = Index
     Parcels[Index].append(RootNode)
 
+    # grow on both sides according to radius
     RoadConquestGrowOnOneSide(Index, StartNodes[0], Radius, OccupiedMap)
     RoadConquestGrowOnOneSide(Index, StartNodes[1], Radius, OccupiedMap)
 
     Landmarks[RootNode[0], RootNode[1]] = 4
+
+    # simplification and restructuring
+    RoadConquestSimplify(Index, Radius, OccupiedMap)
 
 
 def GenerateParcels():
@@ -179,13 +220,28 @@ if __name__ == '__main__':
     for i in range(size):
         RoadConquest(i, [buildings[1][i], buildings[0][i]], 5, hashmap)
 
-    # for key, value in hashmap.items():
-    #     img[key[1], key[0]] = color[value]
+    for key, value in hashmap.items():
+        img[key[1], key[0]] = color[value]
 
-    for i in range(size):
-        for n in Parcels[i]:
-            img[n[1], n[0]] = color[i]
+    # for i in range(size):
+    #     if len(Parcels[i]) < 3 or i != 17:
+    #         continue
+    #     print(Parcels[i])
+    #     LeastSquareLineFitting(Parcels[i])
+    #     for p in Parcels[i]:
+    #         img[p[1], p[0]] = color[i]
 
-    img = cv2.resize(img, (img.shape[1] * 10, img.shape[0] * 10), interpolation=cv2.INTER_NEAREST)
-    cv2.imshow('img', img)
-    cv2.waitKey(0)
+    # for i in range(len(Landmarks)):
+    #     for j in range(len(Landmarks[i])):
+    #         if Landmarks[i, j] == 4:
+    #             img[j, i] = [255, 255, 255]
+
+    # img = cv2.resize(img, (img.shape[1] * 10, img.shape[0] * 10), interpolation=cv2.INTER_NEAREST)
+    # cv2.imshow('img', img)
+    # cv2.waitKey(0)
+
+    # a = [[64, 24], [64, 25], [64, 26], [64, 27], [65, 28], [64, 23], [64, 22], [64, 21], [64, 20], [65, 20]]
+    # a = [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5]]
+    a = [[1, 5], [1, 6], [1, 7], [1, 8], [2, 9], [1, 4], [1, 3], [1, 2], [1, 1]]
+    # a = [[1, 1], [2, 1], [3, 1], [4, 1], [5, 1]]
+    LeastSquareLineFitting(a)
