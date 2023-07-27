@@ -127,7 +127,7 @@ def LeastSquareLineFitting(Nodes):
 def CheckPosition(Root, Node, Direction):
     Diff = [Node[0] - Root[0], Node[1] - Root[1]]
     Factor = Diff[0] * Direction[0] + Diff[1] * Direction[1]
-    return abs(Factor) < 1.5
+    return abs(Factor) < 4
 
 
 def DivideConflict(Index, Occupied, OccupiedMap: dict):
