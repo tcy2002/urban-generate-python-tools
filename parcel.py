@@ -293,9 +293,9 @@ def GenerateOnParcel():
 
 
 if __name__ == '__main__':
-    load_data_from_png('parcel_test.png')
+    load_data_from_png('parcel_test_bigger.png')
 
-    img = cv2.imread('parcel_test.png')
+    img = cv2.imread('parcel_test_bigger.png')
     hashmap = dict()
 
     buildings = np.where(img[:, :, 2] == 255)
@@ -304,7 +304,7 @@ if __name__ == '__main__':
 
     color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size)]
 
-    radius = 6
+    radius = 8
     target = range(size)
     for i, x in enumerate(target):
         RoadConquest(i, [buildings[1][x], buildings[0][x]], radius, hashmap)
