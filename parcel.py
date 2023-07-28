@@ -140,8 +140,21 @@ def CheckPosition(Root, Node, Direction):
 
 
 def RoadConquestGrowOnDirection(Index, Node, Direction, Size, OccupiedMap: dict):
+    RootNode = [Node[0], Node[1]]
+    DirX = 1 if Direction[0] > 0 else -1
+    DirY = 1 if Direction[1] > 0 else -1
+
     for i in range(0, Size):
-        Node = [round(Node[0] + Direction[0]), round(Node[1] + Direction[1])]
+        if Direction[0] == 0 or Direction[1] == 0:
+            Node = [round(Node[0] + Direction[0]), round(Node[1] + Direction[1])]
+        else:
+            Node1 = [round(Node[0] + DirX), Node[1]]
+            Node2 = [Node[0], round(Node[1] + DirY)]
+            Node1Dir = Normalize([Node1[0] - RootNode[0], Node1[1] - RootNode[1]])
+            Node2Dir = Normalize([Node2[0] - RootNode[0], Node2[1] - RootNode[1]])
+            Node1Cos = Node1Dir[0] * Direction[0] + Node1Dir[1] * Direction[1]
+            Node2Cos = Node2Dir[0] * Direction[0] + Node2Dir[1] * Direction[1]
+            Node = Node1 if Node1Cos > Node2Cos else Node2
         if not CheckIndex(Node) or Landmarks[Node[0], Node[1]] != 0:
             return
         Landmarks[Node[0], Node[1]] = 4
@@ -149,20 +162,17 @@ def RoadConquestGrowOnDirection(Index, Node, Direction, Size, OccupiedMap: dict)
         OccupiedMap[Node[0], Node[1]] = Index
 
 
-def RoadConquestGrowOnBothSides(Index, Radius, OccupiedMap: dict):
+def RoadConquestGrowOnBothSides(Index, Radius, Direction, OccupiedMap: dict):
     global Landmarks, Parcels
 
     IRadius = int(Radius)
     TargetSize = 2 * IRadius + 1
     CurrentSize = len(Parcels[Index])
-    Normal, r = LeastSquareLineFitting(Parcels[Index])
-    if r < 0.01:
-        print(Index)
-
+    _, r = LeastSquareLineFitting(Parcels[Index])
     if CurrentSize > TargetSize / 2 and r > 0.5:
         return
 
-    Direction = [-Normal[1], Normal[0]]
+    Direction = [-Direction[1], Direction[0]]
     End1, End2 = GetEndNodes(Parcels[Index], Direction)
     CurrentSize = (End2[0] - End1[0]) * Direction[0] + (End2[1] - End1[1]) * Direction[1]
     HalfSize = int((TargetSize - CurrentSize) / 2)
@@ -197,6 +207,10 @@ def RoadConquestGrowOnOneSide(Index, Node, Radius, Direction, OccupiedMap: dict)
             Parcels[Index].append(Node)
             OccupiedMap[Node[0], Node[1]] = Index
         else:
+            # avoid cutting off other's line
+            Neighbors4 = Get4Neighbors(Node)
+            if len(Neighbors4) == 0 or np.sum(Landmarks[Neighbors4[:, 0], Neighbors4[:, 1]] == 4) > 1:
+                return
             OccupiedByOther.append(Node)
         IRadius -= 1
         Landmarks[Node[0], Node[1]] = 5
@@ -242,7 +256,7 @@ def RoadConquest(Index, Node, Radius, OccupiedMap: dict):
         Landmarks[Col, Row] = 4
 
     # grow on both sides if not enough
-    RoadConquestGrowOnBothSides(Index, Radius, OccupiedMap)
+    RoadConquestGrowOnBothSides(Index, Radius, Direction, OccupiedMap)
 
 
 def RegionConquestCheck(Index, OccupiedMap: dict):
@@ -341,8 +355,8 @@ if __name__ == '__main__':
     color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size)]
 
     radius = 15
-    # target = range(size)
     target = range(size)
+    # target = [23, 30]
     for i, x in enumerate(target):
         RoadConquest(i, [buildings[1][x], buildings[0][x]], radius, hashmap)
     for i, x in enumerate(target):
