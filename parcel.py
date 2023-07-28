@@ -356,7 +356,7 @@ if __name__ == '__main__':
 
     radius = 15
     target = range(size)
-    # target = [23, 30]
+    # target = [25]
     for i, x in enumerate(target):
         RoadConquest(i, [buildings[1][x], buildings[0][x]], radius, hashmap)
     for i, x in enumerate(target):
