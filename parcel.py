@@ -53,9 +53,24 @@ def GetNearestNode(Node, Nodes):
     return MinNode
 
 
+def Magnitude(Node):
+    return np.sqrt(Node[0] * Node[0] + Node[1] * Node[1])
+
+
 def Normalize(Node):
-    Magnitude = np.sqrt(Node[0] * Node[0] + Node[1] * Node[1])
-    return [Node[0] / Magnitude, Node[1] / Magnitude]
+    m = Magnitude(Node)
+    return [Node[0] / m, Node[1] / m]
+
+
+def Distance(Node1, Node2):
+    return np.sqrt((Node1[0] - Node2[0]) * (Node1[0] - Node2[0]) +
+                   (Node1[1] - Node2[1]) * (Node1[1] - Node2[1]))
+
+
+def Average(Nodes):
+    if len(Nodes) == 0:
+        return [0, 0]
+    return [sum([x for x, _ in Nodes]) / len(Nodes), sum([y for _, y in Nodes]) / len(Nodes)]
 
 
 def Get8Neighbors(Node):
@@ -82,12 +97,6 @@ def CheckIndex(Node):
     return 0 <= Node[0] < Landmarks.shape[0] and 0 <= Node[1] < Landmarks.shape[1]
 
 
-def Average(Nodes):
-    if len(Nodes) == 0:
-        return [0, 0]
-    return [sum([x for x, _ in Nodes]) / len(Nodes), sum([y for _, y in Nodes]) / len(Nodes)]
-
-
 def GetEndNodes(Nodes, Direction):
     Center = Average(Nodes)
     Result = []
@@ -106,39 +115,38 @@ def LeastSquareLineFitting(Nodes):
     sum_x2 = sum([x * x for x, _ in Nodes])
     p = n * sum_x2 - sum_x * sum_x
     if p == 0:
-        return [1, 0]
+        return [1, 0], 1
 
     sum_y = sum([y for _, y in Nodes])
     sum_y2 = sum([y * y for _, y in Nodes])
     q = n * sum_y2 - sum_y * sum_y
     if q == 0:
-        return [0, 1]
+        return [0, 1], 1
 
     sum_xy = sum([x * y for x, y in Nodes])
     r = n * sum_xy - sum_x * sum_y
     range_x = max([x for x, _ in Nodes]) - min([x for x, _ in Nodes])
     range_y = max([y for _, y in Nodes]) - min([y for _, y in Nodes])
     if range_x > range_y:
-        return Normalize([-r, p])
+        return Normalize([-r/p, 1]), r / p * r / q
     else:
-        return Normalize([-q, r])
+        return Normalize([-1, r/q]), r / p * r / q
 
 
 def CheckPosition(Root, Node, Direction):
     Diff = [Node[0] - Root[0], Node[1] - Root[1]]
     Factor = Diff[0] * Direction[0] + Diff[1] * Direction[1]
-    return abs(Factor) < 4
+    return abs(Factor) < 3
 
 
-def DivideConflict(Index, Occupied, OccupiedMap: dict):
-    Size = len(Occupied)
-    for i in range(Size):
-        if i < Size // 2:
-            Parcels[Index].append(Occupied[i])
-            Parcels[OccupiedMap[Occupied[i][0], Occupied[i][1]]].remove(Occupied[i])
-            OccupiedMap[Occupied[i][0], Occupied[i][1]] = Index
-        else:
-            Landmarks[Occupied[i][0], Occupied[i][1]] = 4
+def RoadConquestGrowOnDirection(Index, Node, Direction, Size, OccupiedMap: dict):
+    for i in range(0, Size):
+        Node = [round(Node[0] + Direction[0]), round(Node[1] + Direction[1])]
+        if not CheckIndex(Node) or Landmarks[Node[0], Node[1]] != 0:
+            return
+        Landmarks[Node[0], Node[1]] = 4
+        Parcels[Index].append(Node)
+        OccupiedMap[Node[0], Node[1]] = Index
 
 
 def RoadConquestGrowOnBothSides(Index, Radius, OccupiedMap: dict):
@@ -147,27 +155,21 @@ def RoadConquestGrowOnBothSides(Index, Radius, OccupiedMap: dict):
     IRadius = int(Radius)
     TargetSize = 2 * IRadius + 1
     CurrentSize = len(Parcels[Index])
+    Normal, r = LeastSquareLineFitting(Parcels[Index])
+    if r < 0.01:
+        print(Index)
 
-    if CurrentSize > TargetSize / 2:
+    if CurrentSize > TargetSize / 2 and r > 0.5:
         return
 
-    HalfSize = (TargetSize - CurrentSize) // 2
-    print(HalfSize)
-    Normal = LeastSquareLineFitting(Parcels[Index])
     Direction = [-Normal[1], Normal[0]]
-
     End1, End2 = GetEndNodes(Parcels[Index], Direction)
-    for i in range(HalfSize):
-        Node1 = [round(End1[0] - Direction[0] * (i + 1)), round(End1[1] - Direction[1] * (i + 1))]
-        Node2 = [round(End2[0] + Direction[0] * (i + 1)), round(End2[1] + Direction[1] * (i + 1))]
-        if Landmarks[Node1[0], Node1[1]] == 0:
-            Landmarks[Node1[0], Node1[1]] = 4
-            Parcels[Index].append(Node1)
-            OccupiedMap[Node1[0], Node1[1]] = Index
-        if Landmarks[Node2[0], Node2[1]] == 0:
-            Landmarks[Node2[0], Node2[1]] = 4
-            Parcels[Index].append(Node2)
-            OccupiedMap[Node2[0], Node2[1]] = Index
+    CurrentSize = (End2[0] - End1[0]) * Direction[0] + (End2[1] - End1[1]) * Direction[1]
+    HalfSize = int((TargetSize - CurrentSize) / 2)
+
+    # Grow on both sides according to the direction
+    RoadConquestGrowOnDirection(Index, End2, Direction, HalfSize, OccupiedMap)
+    RoadConquestGrowOnDirection(Index, End1, [-Direction[0], -Direction[1]], HalfSize, OccupiedMap)
 
 
 def RoadConquestGrowOnOneSide(Index, Node, Radius, Direction, OccupiedMap: dict):
@@ -183,12 +185,11 @@ def RoadConquestGrowOnOneSide(Index, Node, Radius, Direction, OccupiedMap: dict)
         for Col, Row in Neighbors4:
             if Landmarks[Col, Row] in [0, 4]:
                 Neighbors8 = Get8Neighbors([Col, Row])
-                if len(Neighbors8) == 0:
-                    continue
-                if np.any(Landmarks[Neighbors8[:, 0], Neighbors8[:, 1]] == 1):
+                if len(Neighbors8) > 0 and np.any(Landmarks[Neighbors8[:, 0], Neighbors8[:, 1]] == 1):
                     Node = [Col, Row]
                     flag = True
                     break
+        # if the direction deviates too much, stop growing
         if not flag or not CheckPosition(RootNode, Node, Direction):
             break
 
@@ -201,7 +202,14 @@ def RoadConquestGrowOnOneSide(Index, Node, Radius, Direction, OccupiedMap: dict)
         Landmarks[Node[0], Node[1]] = 5
 
     # use fairness principle to divide the conflict region
-    DivideConflict(Index, OccupiedByOther, OccupiedMap)
+    Size = len(OccupiedByOther)
+    for i in range(Size):
+        if i < Size / 2:
+            Parcels[Index].append(OccupiedByOther[i])
+            Parcels[OccupiedMap[OccupiedByOther[i][0], OccupiedByOther[i][1]]].remove(OccupiedByOther[i])
+            OccupiedMap[OccupiedByOther[i][0], OccupiedByOther[i][1]] = Index
+        else:
+            Landmarks[OccupiedByOther[i][0], OccupiedByOther[i][1]] = 4
 
 
 def RoadConquest(Index, Node, Radius, OccupiedMap: dict):
@@ -213,6 +221,8 @@ def RoadConquest(Index, Node, Radius, OccupiedMap: dict):
 
     NearestNode = GetNearestNode(Node, RoadNodes)
     Direction = Normalize([Node[0] - NearestNode[0], Node[1] - NearestNode[1]])
+    Abs_Dir = [abs(Direction[0]), abs(Direction[1])]
+    Radius *= np.sqrt(1 + np.square(min(Abs_Dir[0], Abs_Dir[1]) / max(Abs_Dir[0], Abs_Dir[1])))
 
     # the nearest node determines that the root node is not on the road
     # and there must be 2 free nodes on both sides of the root node
@@ -235,31 +245,50 @@ def RoadConquest(Index, Node, Radius, OccupiedMap: dict):
     RoadConquestGrowOnBothSides(Index, Radius, OccupiedMap)
 
 
-def RegionConquestGrowOnOnePoint(Index, Node, Size, Direction, OccupiedMap: dict):
-    global Landmarks, Parcels
+def RegionConquestCheck(Index, OccupiedMap: dict):
+    IndicesToRemove = []
+    for i, Node in enumerate(Parcels[Index]):
+        Neighbors4 = Get4Neighbors(Node)
+        flag = False
+        for Col, Row in Neighbors4:
+            if Landmarks[Col, Row] == 4 and OccupiedMap[Col, Row] == Index:
+                flag = True
+                break
+        if not flag:
+            IndicesToRemove.append(i)
 
-    OccupiedByOther = []
+    for i in reversed(IndicesToRemove):
+        Landmarks[Parcels[Index][i][0], Parcels[Index][i][1]] = 0
+        OccupiedMap.pop((Parcels[Index][i][0], Parcels[Index][i][1]))
+        Parcels[Index].pop(i)
+
+
+def RegionConquestGrowOnOneNode(Index, Node, Size, Direction, OccupiedMap: dict):
+    global Landmarks, Parcels
 
     for i in range(1, Size):
         NewNode = [round(Node[0] + Direction[0] * i), round(Node[1] + Direction[1] * i)]
         if not CheckIndex(NewNode):
             break
-        if Landmarks[NewNode[0], NewNode[1]] in [0, 3]:
+
+        if Landmarks[NewNode[0], NewNode[1]] == 0:
             Parcels[Index].append(NewNode)
             OccupiedMap[NewNode[0], NewNode[1]] = Index
+            Landmarks[NewNode[0], NewNode[1]] = 5
         elif Landmarks[NewNode[0], NewNode[1]] == 4:
             if OccupiedMap[NewNode[0], NewNode[1]] != Index:
-                OccupiedByOther.append(NewNode)
+                break
             else:
                 continue
-        elif Landmarks[NewNode[0], NewNode[1]] == 5:
+        elif Landmarks[NewNode[0], NewNode[1]] in [5, 3]:
             continue
         else:
             break
-        Landmarks[NewNode[0], NewNode[1]] = 5
 
-    # also use fairness principle to conquest the conflict region
-    DivideConflict(Index, OccupiedByOther, OccupiedMap)
+        # avoid crossing the road
+        Neighbors4 = Get4Neighbors(NewNode)
+        if len(Neighbors4) > 0 and np.sum(Landmarks[Neighbors4[:, 0], Neighbors4[:, 1]] == 1) > 1:
+            break
 
 
 def RegionConquest(Index, Radius, OccupiedMap: dict):
@@ -268,17 +297,24 @@ def RegionConquest(Index, Radius, OccupiedMap: dict):
     if len(Parcels[Index]) == 0:
         return
 
-    Direction = LeastSquareLineFitting(Parcels[Index])
-    TargetSize = int(Radius * 2 + 1)
+    # check if there are nodes that are not adjacent to the region
+    RegionConquestCheck(Index, OccupiedMap)
+
+    Direction, _ = LeastSquareLineFitting(Parcels[Index])
+    TargetSize = Radius * 2 + 1
+    Center = Average(Parcels[Index])
 
     # check if the direction should be reversed
     check = np.array([[round(Col + Direction[0]), round(Row + Direction[1])] for Col, Row in Parcels[Index]])
     if np.any(Landmarks[check[:, 0], check[:, 1]] == 1):
         Direction = [-Direction[0], -Direction[1]]
 
+    TargetSizeForNodes = [round(TargetSize + ((Center[0] - Col) * Direction[0] + (Center[1] - Row) * Direction[1]))
+                          for Col, Row in Parcels[Index]]
+
     ParcelsCopy = [n for n in Parcels[Index]]
-    for Node in ParcelsCopy:
-        RegionConquestGrowOnOnePoint(Index, Node, TargetSize, Direction, OccupiedMap)
+    for i, Node in enumerate(ParcelsCopy):
+        RegionConquestGrowOnOneNode(Index, Node, TargetSizeForNodes[i], Direction, OccupiedMap)
 
     for Col, Row in Parcels[Index]:
         Landmarks[Col, Row] = 4
@@ -293,9 +329,9 @@ def GenerateOnParcel():
 
 
 if __name__ == '__main__':
-    load_data_from_png('parcel_test_bigger.png')
-
-    img = cv2.imread('parcel_test_bigger.png')
+    file = 'parcel.png'
+    load_data_from_png(file)
+    img = cv2.imread(file)
     hashmap = dict()
 
     buildings = np.where(img[:, :, 2] == 255)
@@ -304,7 +340,8 @@ if __name__ == '__main__':
 
     color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size)]
 
-    radius = 8
+    radius = 15
+    # target = range(size)
     target = range(size)
     for i, x in enumerate(target):
         RoadConquest(i, [buildings[1][x], buildings[0][x]], radius, hashmap)
@@ -321,8 +358,8 @@ if __name__ == '__main__':
     #         img[p[1], p[0]] = color[i]
 
     # mask = np.where(Landmarks == 5)
-    # img[mask[1], mask[0]] = [0, 0, 255]
+    # img[mask[1], mask[0]] = [255, 255, 255]
 
-    img = cv2.resize(img, (img.shape[1] * 10, img.shape[0] * 10), interpolation=cv2.INTER_NEAREST)
+    img = cv2.resize(img, (img.shape[1] * 5, img.shape[0] * 5), interpolation=cv2.INTER_NEAREST)
     cv2.imshow('img', img)
     cv2.waitKey(0)
