@@ -14,12 +14,14 @@ def load_data_from_png(path):
     Landmarks = np.zeros((img.shape[1], img.shape[0]), np.uint8)
     for x in range(img.shape[1]):
         for y in range(img.shape[0]):
-            if img[y, x, 0] == 255:
+            if img[y, x, 0] == 0 and img[y, x, 1] == 255 and img[y, x, 2] == 0:
+                Landmarks[x, y] = 31
+            if img[y, x, 0] == 255 and img[y, x, 1] == 0 and img[y, x, 2] == 0:
+                Landmarks[x, y] = 32
+            if img[y, x, 0] == 0 and img[y, x, 1] == 0 and img[y, x, 2] == 255:
+                Landmarks[x, y] = 33
+            elif img[y, x, 0] == 255 and img[y, x, 1] == 255 and img[y, x, 2] == 255:
                 Landmarks[x, y] = 1
-            elif img[y, x, 1] == 255:
-                Landmarks[x, y] = 1
-            elif img[y, x, 2] == 255:
-                Landmarks[x, y] = 3
 
 
 def GetNodesInRadius(Node, Radius, Type):
@@ -46,9 +48,9 @@ def GetNearestNode(Node, Nodes):
     if len(Nodes) == 0:
         return MinNode
     for Col, Row in Nodes:
-        Distance = (Col - Node[0]) * (Col - Node[0]) + (Row - Node[1]) * (Row - Node[1])
-        if Distance < MinDistance:
-            MinDistance = Distance
+        D = Distance(Node, [Col, Row])
+        if D < MinDistance:
+            MinDistance = D
             MinNode = [Col, Row]
     return MinNode
 
@@ -133,7 +135,7 @@ def LeastSquareLineFitting(Nodes):
         return Normalize([-1, r/q]), r / p * r / q
 
 
-def CheckPosition(Root, Node, Direction):
+def RoadConquestCheckPosition(Root, Node, Direction):
     Diff = [Node[0] - Root[0], Node[1] - Root[1]]
     Factor = Diff[0] * Direction[0] + Diff[1] * Direction[1]
     return abs(Factor) < 3
@@ -188,8 +190,7 @@ def RoadConquestGrowOnOneSide(Index, Node, Radius, Direction, OccupiedMap: dict)
     RootNode = [Node[0], Node[1]]
     OccupiedByOther = []
 
-    IRadius = int(Radius)
-    while IRadius > 0:
+    for i in range(int(Radius)):
         Neighbors4 = Get4Neighbors(Node)
         flag = False
         for Col, Row in Neighbors4:
@@ -200,7 +201,7 @@ def RoadConquestGrowOnOneSide(Index, Node, Radius, Direction, OccupiedMap: dict)
                     flag = True
                     break
         # if the direction deviates too much, stop growing
-        if not flag or not CheckPosition(RootNode, Node, Direction):
+        if not flag or not RoadConquestCheckPosition(RootNode, Node, Direction):
             break
 
         if Landmarks[Node[0], Node[1]] == 0:
@@ -212,7 +213,6 @@ def RoadConquestGrowOnOneSide(Index, Node, Radius, Direction, OccupiedMap: dict)
             if len(Neighbors4) == 0 or np.sum(Landmarks[Neighbors4[:, 0], Neighbors4[:, 1]] == 4) > 1:
                 return
             OccupiedByOther.append(Node)
-        IRadius -= 1
         Landmarks[Node[0], Node[1]] = 5
 
     # use fairness principle to divide the conflict region
@@ -259,42 +259,29 @@ def RoadConquest(Index, Node, Radius, OccupiedMap: dict):
     RoadConquestGrowOnBothSides(Index, Radius, Direction, OccupiedMap)
 
 
-def RegionConquestCheck(Index, OccupiedMap: dict):
-    IndicesToRemove = []
-    for i, Node in enumerate(Parcels[Index]):
-        Neighbors4 = Get4Neighbors(Node)
-        flag = False
-        for Col, Row in Neighbors4:
-            if Landmarks[Col, Row] == 4 and OccupiedMap[Col, Row] == Index:
-                flag = True
-                break
-        if not flag:
-            IndicesToRemove.append(i)
-
-    for i in reversed(IndicesToRemove):
-        Landmarks[Parcels[Index][i][0], Parcels[Index][i][1]] = 0
-        OccupiedMap.pop((Parcels[Index][i][0], Parcels[Index][i][1]))
-        Parcels[Index].pop(i)
-
-
-def RegionConquestGrowOnOneNode(Index, Node, Size, Direction, OccupiedMap: dict):
+def RegionConquestGrowOnOneNode(Index, Node, Size, Direction, RobbedFromOther: list, OccupiedMap: dict):
     global Landmarks, Parcels
+
+    OccupiedByOther = []
+    EndFlag = False
 
     for i in range(1, Size):
         NewNode = [round(Node[0] + Direction[0] * i), round(Node[1] + Direction[1] * i)]
         if not CheckIndex(NewNode):
             break
 
-        if Landmarks[NewNode[0], NewNode[1]] == 0:
+        if Landmarks[NewNode[0], NewNode[1]] == 0 and not EndFlag:
             Parcels[Index].append(NewNode)
             OccupiedMap[NewNode[0], NewNode[1]] = Index
             Landmarks[NewNode[0], NewNode[1]] = 5
         elif Landmarks[NewNode[0], NewNode[1]] == 4:
             if OccupiedMap[NewNode[0], NewNode[1]] != Index:
+                # OccupiedByOther.append(NewNode)
+                # EndFlag = True
                 break
             else:
                 continue
-        elif Landmarks[NewNode[0], NewNode[1]] in [5, 3]:
+        elif Landmarks[NewNode[0], NewNode[1]] in [5, 31, 32, 33]:
             continue
         else:
             break
@@ -304,15 +291,16 @@ def RegionConquestGrowOnOneNode(Index, Node, Size, Direction, OccupiedMap: dict)
         if len(Neighbors4) > 0 and np.sum(Landmarks[Neighbors4[:, 0], Neighbors4[:, 1]] == 1) > 1:
             break
 
+    # # use fairness principle to divide the conflict region
+    # for i in range(len(OccupiedByOther) // 2):
+    #     RobbedFromOther.append(OccupiedByOther[i])
+
 
 def RegionConquest(Index, Radius, OccupiedMap: dict):
     global Landmarks, Parcels
 
     if len(Parcels[Index]) == 0:
         return
-
-    # check if there are nodes that are not adjacent to the region
-    RegionConquestCheck(Index, OccupiedMap)
 
     Direction, _ = LeastSquareLineFitting(Parcels[Index])
     TargetSize = Radius * 2 + 1
@@ -327,11 +315,17 @@ def RegionConquest(Index, Radius, OccupiedMap: dict):
                           for Col, Row in Parcels[Index]]
 
     ParcelsCopy = [n for n in Parcels[Index]]
+    RobbedFromOther = []
     for i, Node in enumerate(ParcelsCopy):
-        RegionConquestGrowOnOneNode(Index, Node, TargetSizeForNodes[i], Direction, OccupiedMap)
+        RegionConquestGrowOnOneNode(Index, Node, TargetSizeForNodes[i], Direction, RobbedFromOther, OccupiedMap)
 
     for Col, Row in Parcels[Index]:
         Landmarks[Col, Row] = 4
+
+    # for Node in RobbedFromOther:
+    #     Parcels[Index].append(Node)
+    #     Parcels[OccupiedMap[Node[0], Node[1]]].remove(Node)
+    #     OccupiedMap[Node[0], Node[1]] = Index
 
 
 def GenerateParcels():
@@ -343,24 +337,40 @@ def GenerateOnParcel():
 
 
 if __name__ == '__main__':
-    file = 'parcel.png'
+    file = 'parcel_real_p.png'
     load_data_from_png(file)
     img = cv2.imread(file)
     hashmap = dict()
 
-    buildings = np.where(img[:, :, 2] == 255)
-    size = len(buildings[0])
-    Parcels = [[] for i in range(size)]
+    buildings1 = np.where(Landmarks == 31)
+    buildings2 = np.where(Landmarks == 32)
+    buildings3 = np.where(Landmarks == 33)
+    size1 = len(buildings1[0])
+    size2 = len(buildings2[0])
+    size3 = len(buildings3[0])
+    Parcels = [[] for i in range(size1 + size2 + size3)]
+    color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size1 + size2 + size3)]
 
-    color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size)]
-
-    radius = 15
-    target = range(size)
-    # target = [25]
+    radius = 10
+    target = range(size1)
     for i, x in enumerate(target):
-        RoadConquest(i, [buildings[1][x], buildings[0][x]], radius, hashmap)
+        RoadConquest(i, [buildings1[0][x], buildings1[1][x]], radius, hashmap)
     for i, x in enumerate(target):
         RegionConquest(i, radius, hashmap)
+
+    radius = 15
+    target = range(size2)
+    for i, x in enumerate(target):
+        RoadConquest(i + size1, [buildings2[0][x], buildings2[1][x]], radius, hashmap)
+    for i, x in enumerate(target):
+        RegionConquest(i + size1, radius, hashmap)
+
+    radius = 20
+    target = range(size3)
+    for i, x in enumerate(target):
+        RoadConquest(i + size1 + size2, [buildings3[0][x], buildings3[1][x]], radius, hashmap)
+    for i, x in enumerate(target):
+        RegionConquest(i + size1 + size2, radius, hashmap)
 
     for key, value in hashmap.items():
         img[key[1], key[0]] = color[value]
@@ -374,6 +384,7 @@ if __name__ == '__main__':
     # mask = np.where(Landmarks == 5)
     # img[mask[1], mask[0]] = [255, 255, 255]
 
-    img = cv2.resize(img, (img.shape[1] * 5, img.shape[0] * 5), interpolation=cv2.INTER_NEAREST)
+    # img = cv2.resize(img, (img.shape[1] * 2, img.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
     cv2.imshow('img', img)
     cv2.waitKey(0)
+    cv2.imwrite('parcel_real_p_result.png', img)
