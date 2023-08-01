@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 from numpy.random import random
 
+
 # 0: Land, 1: Road, 2: Cross, 3: Building, 4: Unavailable
 Landmarks: np.ndarray
 Parcels = []
