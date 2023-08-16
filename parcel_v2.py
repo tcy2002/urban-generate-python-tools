@@ -15,18 +15,18 @@ def load_data_from_png(path):
     Landmarks = np.zeros((img.shape[1], img.shape[0]), np.uint8)
     for x in range(img.shape[1]):
         for y in range(img.shape[0]):
-            # if img[y, x, 0] == 255 and img[y, x, 1] == 0 and img[y, x, 2] == 0:
-            #     Landmarks[x, y] = 1
-            # elif img[y, x, 0] == 0 and img[y, x, 1] == 0 and img[y, x, 2] == 255:
-            #     Landmarks[x, y] = 3
-            if img[y, x, 0] == 0 and img[y, x, 1] == 255 and img[y, x, 2] == 0:
-                Landmarks[x, y] = 31
-            elif img[y, x, 0] == 255 and img[y, x, 1] == 0 and img[y, x, 2] == 0:
-                Landmarks[x, y] = 32
-            elif img[y, x, 0] == 0 and img[y, x, 1] == 0 and img[y, x, 2] == 255:
-                Landmarks[x, y] = 33
-            elif img[y, x, 0] == 255 and img[y, x, 1] == 255 and img[y, x, 2] == 255:
+            if img[y, x, 0] == 255 and img[y, x, 1] == 0 and img[y, x, 2] == 0:
                 Landmarks[x, y] = 1
+            elif img[y, x, 0] == 0 and img[y, x, 1] == 0 and img[y, x, 2] == 255:
+                Landmarks[x, y] = 3
+            # if img[y, x, 0] == 0 and img[y, x, 1] == 255 and img[y, x, 2] == 0:
+            #     Landmarks[x, y] = 31
+            # elif img[y, x, 0] == 255 and img[y, x, 1] == 0 and img[y, x, 2] == 0:
+            #     Landmarks[x, y] = 32
+            # elif img[y, x, 0] == 0 and img[y, x, 1] == 0 and img[y, x, 2] == 255:
+            #     Landmarks[x, y] = 33
+            # elif img[y, x, 0] == 255 and img[y, x, 1] == 255 and img[y, x, 2] == 255:
+            #     Landmarks[x, y] = 1
 
 
 def GetNodesInRadius(Node, Radius, Type):
@@ -151,8 +151,10 @@ class Building:
 
         self.__RoadRootNode = [-1, -1]
         self.__RoadEndNodes = [[-1, -1], [-1, -1]]
+        self.__RoadLastNodes = [[-1, -1], [-1, -1]]
         self.__RoadConqueredDist = [0, 0]
         self.__RoadTerminalDist = 0
+        self.__RoadDirectionFlag = [False, False]
         self.__RoadEndFlag = [False, False]
 
         self.__RegionStartNum = 0
@@ -164,21 +166,17 @@ class Building:
     def RoadConquestEnds(self):
         return self.__RoadEndFlag[0] and self.__RoadEndFlag[1]
 
-    def __RoadConquestCheckDirection(self, Node):
-        Diff = [Node[0] - self.__RoadRootNode[0], Node[1] - self.__RoadRootNode[1]]
-        Factor = Diff[0] * self.__Direction[0] + Diff[1] * self.__Direction[1]
-        return abs(Factor) < 2.5
+    def __RoadConquestCheckValid(self, EndNodeIndex, Node):
+        RDirection = [Node[0] - self.__RoadLastNodes[EndNodeIndex][0],
+                      Node[1] - self.__RoadLastNodes[EndNodeIndex][1]]
+        Factor = (self.__Direction[0] * RDirection[1] - self.__Direction[1] * RDirection[0]) >= 0
+        self.__RoadLastNodes[EndNodeIndex] = Node
 
-    def __RoadConquestCheckOcclusion(self, Node, OccupiedMap: dict):
-        global Landmarks
-
-        for i in range(1, int(self.__RoadTerminalDist) // 2):
-            CheckNode = [round(Node[0] + self.__Direction[0] * i),
-                         round(Node[1] + self.__Direction[1] * i)]
-            if CheckIndex(CheckNode) and Landmarks[CheckNode[0], CheckNode[1]] == 4 \
-                    and OccupiedMap[CheckNode[0], CheckNode[1]] != self.Index:
-                return True
-        return False
+        if self.__RoadConqueredDist[EndNodeIndex] == 0:
+            self.__RoadDirectionFlag[EndNodeIndex] = Factor
+        elif Factor != self.__RoadDirectionFlag[EndNodeIndex]:
+            return False
+        return True
 
     def RoadConquestInit(self, OccupiedMap: dict):
         global Landmarks
@@ -198,6 +196,7 @@ class Building:
             return True
 
         self.__RoadEndNodes[0] = self.__RoadEndNodes[1] = self.__RoadRootNode
+        self.__RoadLastNodes[0] = self.__RoadLastNodes[1] = self.__RoadRootNode
         self.Nodes.append(self.__RoadRootNode)
         Landmarks[self.__RoadRootNode[0], self.__RoadRootNode[1]] = 4
         OccupiedMap[self.__RoadRootNode[0], self.__RoadRootNode[1]] = self.Index
@@ -216,8 +215,7 @@ class Building:
                 if len(Neighbors8) > 0 and np.any(Landmarks[Neighbors8[:, 0], Neighbors8[:, 1]] == 1):
                     Node = Neighbor
                     break
-        if Node[0] == -1 or not self.__RoadConquestCheckDirection(Node) \
-                or self.__RoadConquestCheckOcclusion(Node, OccupiedMap):
+        if Node[0] == -1 or not self.__RoadConquestCheckValid(EndNodeIndex, Node):
             return True
 
         self.Nodes.append(Node)
@@ -255,18 +253,16 @@ class Building:
 
         self.__RegionEndFlag = [False for _ in self.Nodes]
         self.__RegionConqueredDist = [0 for _ in self.Nodes]
-        self.__Direction, _ = LeastSquareLineFitting(self.Nodes)
+        self.__RegionDirection, _ = LeastSquareLineFitting(self.Nodes)
         self.__RegionStartNum = len(self.Nodes)
 
         # check if the direction should be reversed
-        Check = np.array([[round(Col + self.__Direction[0]), round(Row + self.__Direction[1])]
-                          for Col, Row in self.Nodes])
-        if np.any(Landmarks[Check[:, 0], Check[:, 1]] == 1):
-            self.__Direction = [-self.__Direction[0], -self.__Direction[1]]
+        if (self.__RegionDirection[0] * self.__Direction[0] + self.__RegionDirection[1] * self.__Direction[1]) < 0:
+            self.__RegionDirection = [-self.__RegionDirection[0], -self.__RegionDirection[1]]
 
         Center = Average(self.Nodes)
-        self.__RegionTerminalDist = [round(self.Radius * 2 + ((Center[0] - Col) * self.__Direction[0] +
-                                                              (Center[1] - Row) * self.__Direction[1]))
+        self.__RegionTerminalDist = [round(self.Radius * 2 + ((Center[0] - Col) * self.__RegionDirection[0] +
+                                                              (Center[1] - Row) * self.__RegionDirection[1]))
                                      for Col, Row in self.Nodes]
 
         return False
@@ -275,8 +271,8 @@ class Building:
         global Landmarks, img, color
 
         Length = self.__RegionConqueredDist[EndNodeIndex] + 1
-        Node = [round(self.Nodes[EndNodeIndex][0] + self.__Direction[0] * Length),
-                round(self.Nodes[EndNodeIndex][1] + self.__Direction[1] * Length)]
+        Node = [round(self.Nodes[EndNodeIndex][0] + self.__RegionDirection[0] * Length),
+                round(self.Nodes[EndNodeIndex][1] + self.__RegionDirection[1] * Length)]
         if not CheckIndex(Node):
             return True
 
@@ -286,12 +282,7 @@ class Building:
             OccupiedMap[Node[0], Node[1]] = self.Index
             self.__RegionConqueredDist[EndNodeIndex] += 1
             img[Node[1], Node[0]] = color[self.__RegionConqueredDist[EndNodeIndex]]
-
-            # avoid crossing the road
-            Neighbors4 = Get4Neighbors(Node)
-            if len(Neighbors4) > 0 and np.sum(Landmarks[Neighbors4[:, 0], Neighbors4[:, 1]] == 1) > 1:
-                return True
-        elif Landmarks[Node[0], Node[1]] in [31, 32, 33] or \
+        elif Landmarks[Node[0], Node[1]] in [3] or \
                 (Landmarks[Node[0], Node[1]] == 4 and OccupiedMap[Node[0], Node[1]] == self.Index):
             self.__RegionConqueredDist[EndNodeIndex] += 1
         else:
@@ -314,6 +305,46 @@ class Building:
             if np.all(self.__RegionEndFlag):
                 break
 
+    def RoadConquestSupplementSide(self, Node, Direction, Size, OccupiedMap: dict):
+        global Landmarks
+
+        RootNode = [Node[0], Node[1]]
+        DirX = 1 if Direction[0] > 0 else -1
+        DirY = 1 if Direction[1] > 0 else -1
+
+        for i in range(0, Size):
+            if Direction[0] == 0 or Direction[1] == 0:
+                Node = [round(Node[0] + Direction[0]), round(Node[1] + Direction[1])]
+            else:
+                Node1 = [round(Node[0] + DirX), Node[1]]
+                Node2 = [Node[0], round(Node[1] + DirY)]
+                Node1Dir = Normalize([Node1[0] - RootNode[0], Node1[1] - RootNode[1]])
+                Node2Dir = Normalize([Node2[0] - RootNode[0], Node2[1] - RootNode[1]])
+                Node1Cos = Node1Dir[0] * Direction[0] + Node1Dir[1] * Direction[1]
+                Node2Cos = Node2Dir[0] * Direction[0] + Node2Dir[1] * Direction[1]
+                Node = Node1 if Node1Cos > Node2Cos else Node2
+            if not CheckIndex(Node) or Landmarks[Node[0], Node[1]] != 0:
+                return
+            Landmarks[Node[0], Node[1]] = 4
+            self.Nodes.append(Node)
+            OccupiedMap[Node[0], Node[1]] = self.Index
+
+    def RoadConquestSupplement(self, OccupiedMap: dict):
+        global Landmarks
+
+        TargetSize = int(2 * self.Radius + 1)
+        CurrentSize = len(self.Nodes)
+        if CurrentSize >= TargetSize / 2:
+            return
+
+        Direction = [-self.__Direction[1], self.__Direction[0]]
+        End1, End2 = GetEndNodes(self.Nodes, Direction)
+        CurrentSize = (End2[0] - End1[0]) * Direction[0] + (End2[1] - End1[1]) * Direction[1]
+        HalfSize = int((TargetSize - CurrentSize) / 2)
+
+        self.RoadConquestSupplementSide(End2, Direction, HalfSize, OccupiedMap)
+        self.RoadConquestSupplementSide(End1, [-Direction[0], -Direction[1]], HalfSize, OccupiedMap)
+
 
 def RoadConquest(OccupiedMap: dict):
     global Landmarks
@@ -330,6 +361,9 @@ def RoadConquest(OccupiedMap: dict):
         if np.all(EndFlag):
             break
 
+    for Building in Buildings:
+        Building.RoadConquestSupplement(OccupiedMap)
+
 
 def RegionConquest(OccupiedMap: dict):
     global Landmarks, img, color
@@ -338,50 +372,43 @@ def RegionConquest(OccupiedMap: dict):
     for Building in Buildings:
         EndFlag[Building.Index] = Building.RegionConquestInit()
 
-    # for Key, Value in hashmap.items():
-    #     img[Key[1], Key[0]] = color[Value]
-    # cv2.imshow('img', cv2.resize(img, (img.shape[1] * 5, img.shape[0] * 5), interpolation=cv2.INTER_NEAREST))
-    # cv2.waitKey(0)
-
     while True:
         for Building in Buildings:
             if not EndFlag[Building.Index]:
                 Building.RegionConquestStepN(1, OccupiedMap)
                 EndFlag[Building.Index] = Building.RegionConquestEnds()
-                # cv2.imshow('img', cv2.resize(img, (img.shape[1] * 5, img.shape[0] * 5), interpolation=cv2.INTER_NEAREST))
-                # cv2.waitKey(0)
         if np.all(EndFlag):
             break
 
 
 if __name__ == '__main__':
-    file = 'parcel_real_p.png'
+    file = 'parcel.png'
     load_data_from_png(file)
     img = cv2.imread(file)
     hashmap = dict()
 
-    buildings1 = np.where(Landmarks == 31)
-    buildings2 = np.where(Landmarks == 32)
-    buildings3 = np.where(Landmarks == 33)
+    buildings1 = np.where(Landmarks == 3)
+    # buildings2 = np.where(Landmarks == 32)
+    # buildings3 = np.where(Landmarks == 33)
     size1 = len(buildings1[0])
-    size2 = len(buildings2[0])
-    size3 = len(buildings3[0])
-    color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size1 + size2 + size3)]
+    # size2 = len(buildings2[0])
+    # size3 = len(buildings3[0])
+    color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size1)]
 
-    radius = 10
+    radius = 15
     target = range(size1)
     for i, x in enumerate(target):
         Buildings.append(Building(i, radius, [buildings1[0][x], buildings1[1][x]]))
 
-    radius = 15
-    target = range(size2)
-    for i, x in enumerate(target):
-        Buildings.append(Building(i + size1, radius, [buildings2[0][x], buildings2[1][x]]))
-
-    radius = 20
-    target = range(size3)
-    for i, x in enumerate(target):
-        Buildings.append(Building(i + size1 + size2, radius, [buildings3[0][x], buildings3[1][x]]))
+    # radius = 15
+    # target = range(size2)
+    # for i, x in enumerate(target):
+    #     Buildings.append(Building(i + size1, radius, [buildings2[0][x], buildings2[1][x]]))
+    #
+    # radius = 20
+    # target = range(size3)
+    # for i, x in enumerate(target):
+    #     Buildings.append(Building(i + size1 + size2, radius, [buildings3[0][x], buildings3[1][x]]))
 
     RoadConquest(hashmap)
     RegionConquest(hashmap)
