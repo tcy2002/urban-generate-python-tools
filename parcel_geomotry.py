@@ -4,7 +4,7 @@ from numpy.random import random
 
 # algorithm of parcel division based on geometry
 
-# 0: Land, 1: Road, 1x: adjacent to road, 3x: Building, 4:Occupied by building
+# 0: Land, 1: Road, 3x: Building, 4:Occupied by building
 Landmarks: np.ndarray
 Buildings = []
 
@@ -39,31 +39,6 @@ def Get4Neighbors(Node):
         return np.array(
             [[Node[0] - 1, Node[1]], [Node[0] + 1, Node[1]], [Node[0], Node[1] - 1], [Node[0], Node[1] + 1]])
     return np.array([])
-
-
-def DistanceTransformForRoad(img):
-    global Landmarks
-
-    Marks = [1, 11, 12, 13, 14]
-    Colors = [[255, 255, 255], [140, 140, 140], [110, 110, 110], [80, 80, 80], [50, 50, 50]]
-    for n in range(4):
-        Nodes = np.where(Landmarks == Marks[n])
-        for i in range(len(Nodes[0])):
-            x = Nodes[0][i]
-            y = Nodes[1][i]
-            if 0 < x < Landmarks.shape[0] - 1 and 0 < y < Landmarks.shape[1] - 1:
-                if Landmarks[x - 1, y] == 0:
-                    Landmarks[x - 1, y] = Marks[n + 1]
-                    img[y, x - 1, :] = Colors[n + 1]
-                if Landmarks[x + 1, y] == 0:
-                    Landmarks[x + 1, y] = Marks[n + 1]
-                    img[y, x + 1, :] = Colors[n + 1]
-                if Landmarks[x, y - 1] == 0:
-                    Landmarks[x, y - 1] = Marks[n + 1]
-                    img[y - 1, x, :] = Colors[n + 1]
-                if Landmarks[x, y + 1] == 0:
-                    Landmarks[x, y + 1] = Marks[n + 1]
-                    img[y + 1, x, :] = Colors[n + 1]
 
 
 def Distance(Node1, Node2):
@@ -160,6 +135,9 @@ class Building:
 
         self.__Direction = [0, 1]
 
+        self.__RoadEndPos1 = [0, 0]
+        self.__RoadEndPos2 = [0, 0]
+
     def RoadConquest(self):
         NearestRoadNode = GetNearestNode(self.Center, GetNodesInRadius(self.Center, self.Length, 1))
         if NearestRoadNode == [-1, -1]:
@@ -170,8 +148,18 @@ class Building:
         RootPos = [NearestRoadNode[0] + self.__Direction[0] * DistanceToRoad,
                    NearestRoadNode[1] + self.__Direction[1] * DistanceToRoad]
 
-        self.RoadConquestOnOneSide(RootPos, [self.__Direction[1], -self.__Direction[0]], 4, self.Width / 8)
-        self.RoadConquestOnOneSide(RootPos, [-self.__Direction[1], self.__Direction[0]], 4, self.Width / 8)
+        StepNum1, EndPos1 = self.RoadConquestOnOneSide(RootPos, [self.__Direction[1], -self.__Direction[0]], 3, self.Width / 6)
+        StepNum2, EndPos2 = self.RoadConquestOnOneSide(RootPos, [-self.__Direction[1], self.__Direction[0]], 3, self.Width / 6)
+
+        if StepNum1 < 3 and StepNum2 == 3:
+            _, EndPos1 = self.RoadConquestOnOneSide(EndPos2, [-self.__Direction[1], self.__Direction[0]], 3 - StepNum1, self.Width / 6)
+        elif StepNum1 == 3 and StepNum2 < 3:
+            _, EndPos2 = self.RoadConquestOnOneSide(EndPos1, [self.__Direction[1], -self.__Direction[0]], 3 - StepNum2, self.Width / 6)
+        elif StepNum1 < 3 and StepNum2 < 3:
+            self.Borders.clear()
+
+        self.__RoadEndPos1 = EndPos1
+        self.__RoadEndPos2 = EndPos2
 
     def RoadConquestOnOneSide(self, RootPos, Direction, StepNum, StepLength):
         for i in range(StepNum):
@@ -179,32 +167,28 @@ class Building:
             LoopTime = 0
             while True:
                 IntersectNodes = GetIntersectNodes(RootPos, EndPos)
-                TotalDistance = 0
+                NearByNodes = GetNodesInRadius(EndPos, 2, 1)
                 Flag = False
                 for IntersectNode in IntersectNodes:
-                    if Landmarks[IntersectNode[0], IntersectNode[1]] in [14, 13, 12, 11]:
-                        TotalDistance += Landmarks[IntersectNode[0], IntersectNode[1]] - 10
-                    elif Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
+                    if Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
                         Flag = True
                         break
-                    else:
-                        TotalDistance += 5
-                if 2.5 < TotalDistance / len(IntersectNodes) and not Flag:
+                for NearByNode in NearByNodes:
+                    if Landmarks[NearByNode[0], NearByNode[1]] == 1:
+                        Flag = True
+                        break
+                if not Flag:
                     break
-                EndPos = [EndPos[0] + self.__Direction[0], EndPos[1] + self.__Direction[1]]
                 LoopTime += 1
                 if LoopTime > 5:
-                    return
+                    return i, RootPos
+                EndPos = [EndPos[0] + self.__Direction[0], EndPos[1] + self.__Direction[1]]
             self.Borders.append([RootPos, EndPos])
             RootPos = EndPos
-
-    def RoadConquestCheck(self):
-        pass
+        return StepNum, RootPos
 
     def RegionConquest(self):
-        pass
 
-    def RegionConquestCheck(self):
         pass
 
     def Draw(self, img, zoom):
@@ -235,7 +219,6 @@ def mouse_event(event, x, y, flags, param):
 if __name__ == '__main__':
     load_data_from_png('parcel_geo.png')
     img = cv2.imread('parcel_geo.png')
-    DistanceTransformForRoad(img)
     img = cv2.resize(img, (1000, 1000), interpolation=cv2.INTER_NEAREST)
     zoom = 5
     mouse_state = 0
