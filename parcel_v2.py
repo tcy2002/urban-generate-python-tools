@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 from numpy.random import random
 
+# algorithm of parcel division based on pixel image
 
 # 0: Land, 1: Road, 3x: Building, 4:Occupied
 Landmarks: np.ndarray
@@ -34,7 +35,6 @@ def GetNodesInRadius(Node, Radius, Type):
     DRadius = Radius + 0.3
     IRadius = int(Radius)
     CentralCol, CentralRow = Node
-
     for Row in range(CentralRow - IRadius if CentralRow - IRadius > 0 else 0,
                      CentralRow + IRadius + 1 if CentralRow + IRadius < Landmarks.shape[1] else Landmarks.shape[1]):
         RowHalfLength = int(np.sqrt(DRadius * DRadius - (Row - CentralRow) * (Row - CentralRow)))
@@ -43,7 +43,6 @@ def GetNodesInRadius(Node, Radius, Type):
                          Landmarks.shape[0]):
             if Landmarks[Col, Row] == Type:
                 Result.append([Col, Row])
-
     return Result
 
 
