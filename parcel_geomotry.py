@@ -41,6 +41,12 @@ def Get4Neighbors(Node):
     return np.array([])
 
 
+def CheckNode(Node):
+    global Landmarks
+    x, y = Landmarks.shape
+    return 0 <= Node[0] < x and 0 <= Node[1] < y
+
+
 def Distance(Node1, Node2):
     return np.sqrt((Node1[0] - Node2[0]) * (Node1[0] - Node2[0]) +
                    (Node1[1] - Node2[1]) * (Node1[1] - Node2[1]))
@@ -148,18 +154,15 @@ class Building:
         RootPos = [NearestRoadNode[0] + self.__Direction[0] * DistanceToRoad,
                    NearestRoadNode[1] + self.__Direction[1] * DistanceToRoad]
 
-        StepNum1, EndPos1 = self.RoadConquestOnOneSide(RootPos, [self.__Direction[1], -self.__Direction[0]], 3, self.Width / 6)
-        StepNum2, EndPos2 = self.RoadConquestOnOneSide(RootPos, [-self.__Direction[1], self.__Direction[0]], 3, self.Width / 6)
+        StepNum1, self.__RoadEndPos1 = self.RoadConquestOnOneSide(RootPos, [self.__Direction[1], -self.__Direction[0]], 3, self.Width / 6)
+        StepNum2, self.__RoadEndPos2 = self.RoadConquestOnOneSide(RootPos, [-self.__Direction[1], self.__Direction[0]], 3, self.Width / 6)
 
         if StepNum1 < 3 and StepNum2 == 3:
-            _, EndPos1 = self.RoadConquestOnOneSide(EndPos2, [-self.__Direction[1], self.__Direction[0]], 3 - StepNum1, self.Width / 6)
+            _, self.__RoadEndPos2 = self.RoadConquestOnOneSide(self.__RoadEndPos2, [-self.__Direction[1], self.__Direction[0]], 3 - StepNum1, self.Width / 6)
         elif StepNum1 == 3 and StepNum2 < 3:
-            _, EndPos2 = self.RoadConquestOnOneSide(EndPos1, [self.__Direction[1], -self.__Direction[0]], 3 - StepNum2, self.Width / 6)
+            _, self.__RoadEndPos1 = self.RoadConquestOnOneSide(self.__RoadEndPos1, [self.__Direction[1], -self.__Direction[0]], 3 - StepNum2, self.Width / 6)
         elif StepNum1 < 3 and StepNum2 < 3:
             self.Borders.clear()
-
-        self.__RoadEndPos1 = EndPos1
-        self.__RoadEndPos2 = EndPos2
 
     def RoadConquestOnOneSide(self, RootPos, Direction, StepNum, StepLength):
         for i in range(StepNum):
@@ -170,17 +173,17 @@ class Building:
                 NearByNodes = GetNodesInRadius(EndPos, 2, 1)
                 Flag = False
                 for IntersectNode in IntersectNodes:
-                    if Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
+                    if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
                         Flag = True
                         break
                 for NearByNode in NearByNodes:
-                    if Landmarks[NearByNode[0], NearByNode[1]] == 1:
+                    if not CheckNode(NearByNode) or Landmarks[NearByNode[0], NearByNode[1]] == 1:
                         Flag = True
                         break
                 if not Flag:
                     break
                 LoopTime += 1
-                if LoopTime > 5:
+                if LoopTime > StepLength:
                     return i, RootPos
                 EndPos = [EndPos[0] + self.__Direction[0], EndPos[1] + self.__Direction[1]]
             self.Borders.append([RootPos, EndPos])
@@ -188,8 +191,76 @@ class Building:
         return StepNum, RootPos
 
     def RegionConquest(self):
+        Diff = [self.__RoadEndPos1[0] - self.__RoadEndPos2[0], self.__RoadEndPos1[1] - self.__RoadEndPos2[1]]
+        DiffOnDirection = Diff[0] * self.__Direction[0] + Diff[1] * self.__Direction[1]
+        self.RegionConquestOnOneSide(self.__RoadEndPos1, [-self.__Direction[1], self.__Direction[0]],
+                                     self.Length - DiffOnDirection / 2, 30)
+        self.RegionConquestOnOneSide(self.__RoadEndPos2, [self.__Direction[1], -self.__Direction[0]],
+                                     self.Length + DiffOnDirection / 2, 30)
 
-        pass
+    def RegionConquestOnOneSide(self, RootPos, Direction, Length, MaxAngle):
+        _, EndPos = self.RegionConquestFindEndNode(RootPos, Direction, 6, Length / 6)
+
+        NearestRoadNode = GetNearestNode(EndPos, GetNodesInRadius(EndPos, self.Length * np.sin(np.radians(MaxAngle)), 1))
+        if NearestRoadNode == [-1, -1]:
+            self.Borders.append([RootPos, EndPos])
+            return
+
+        MiddlePos = [-1, -1]
+        Found = False
+        while MaxAngle > 0:
+            Rad = np.radians(MaxAngle)
+            Tan = np.tan(Rad)
+            Cos = np.cos(Rad)
+            Len = Distance(EndPos, RootPos)
+            R = Normalize([EndPos[0] - RootPos[0] + Len * Tan * -Direction[0],
+                           EndPos[1] - RootPos[1] + Len * Tan * -Direction[1]])
+            R = [R[0] * Len * Cos, R[1] * Len * Cos]
+            MiddlePos = [RootPos[0] + R[0], RootPos[1] + R[1]]
+
+            IntersectNodes = GetIntersectNodes(RootPos, MiddlePos)
+            Flag = False
+            for IntersectNode in IntersectNodes:
+                if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
+                    Flag = True
+                    break
+            if not Flag:
+                Found = True
+                break
+            MaxAngle -= 5
+
+        if Found:
+            self.Borders.append([MiddlePos, EndPos])
+
+        EndPos = MiddlePos if Found else EndPos
+
+
+    def RegionConquestFindEndNode(self, RootPos, Direction, StepNum, StepLength):
+        StartPos = RootPos
+        for i in range(StepNum):
+            EndPos = [RootPos[0] + self.__Direction[0] * StepLength * (i + 1),
+                      RootPos[1] + self.__Direction[1] * StepLength * (i + 1)]
+            LoopTime = 0
+            while True:
+                IntersectNodes = GetIntersectNodes(StartPos, EndPos)
+                NearByNodes = GetNodesInRadius(EndPos, 2, 1)
+                Flag = False
+                for IntersectNode in IntersectNodes:
+                    if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
+                        Flag = True
+                        break
+                for NearByNode in NearByNodes:
+                    if not CheckNode(NearByNode) or Landmarks[NearByNode[0], NearByNode[1]] == 1:
+                        Flag = True
+                        break
+                if not Flag:
+                    break
+                LoopTime += 1
+                if LoopTime > 5:
+                    return i, StartPos
+                EndPos = [EndPos[0] + Direction[0], EndPos[1] + Direction[1]]
+            StartPos = EndPos
+        return StepNum, StartPos
 
     def Draw(self, img, zoom):
         if len(self.Borders) == 0:
@@ -207,6 +278,7 @@ def mouse_event(event, x, y, flags, param):
             img_copy = np.copy(img)
             building = Building(0, 30, 30, [x / zoom, y / zoom])
             building.RoadConquest()
+            building.RegionConquest()
             building.Draw(img_copy, zoom)
             cv2.circle(img_copy, (x, y), 3, (0, 0, 255), -1)
             cv2.imshow('img', img_copy)
