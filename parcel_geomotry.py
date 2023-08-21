@@ -1,17 +1,17 @@
 import numpy as np
 import cv2
-from numpy.random import random
+import threading
 
 # algorithm of parcel division based on geometry
 
 # 0: Land, 1: Road, 3x: Building, 4:Occupied by building
 Landmarks: np.ndarray
 Buildings = []
+lock = threading.Lock()
 
 
 def load_data_from_png(path):
     global Landmarks
-
     img = cv2.imread(path)
     Landmarks = np.zeros((img.shape[1], img.shape[0]), np.uint8)
     for x in range(img.shape[1]):
@@ -153,6 +153,7 @@ class Building:
         self.Nodes = []
         self.Borders = []
 
+        self.__Valid = True
         self.__Direction = [0, 1]
         self.__RoadEndPos1 = [0, 0]
         self.__RoadEndPos2 = [0, 0]
@@ -169,6 +170,8 @@ class Building:
         return True
 
     def RoadConquest(self):
+        if not self.__Valid:
+            return
         NearestRoadNode = GetNearestNode(self.Center, GetNodesInRadius(self.Center, self.Length, 1))
         if NearestRoadNode == [-1, -1]:
             return
@@ -187,6 +190,7 @@ class Building:
             _, self.__RoadEndPos1 = self.RoadConquestOnOneSide(self.__RoadEndPos1, [self.__Direction[1], -self.__Direction[0]], 3 - StepNum2, self.Width / 6)
         elif StepNum1 < 3 and StepNum2 < 3:
             self.Borders.clear()
+            self.__Valid = False
 
     def RoadConquestOnOneSide(self, RootPos, Direction, StepNum, StepLength):
         for i in range(StepNum):
@@ -204,6 +208,9 @@ class Building:
         return StepNum, RootPos
 
     def RegionConquest(self):
+        if not self.__Valid:
+            return
+
         Diff = [self.__RoadEndPos1[0] - self.__RoadEndPos2[0], self.__RoadEndPos1[1] - self.__RoadEndPos2[1]]
         DiffOnDirection = Diff[0] * self.__Direction[0] + Diff[1] * self.__Direction[1]
         TopPos1 = self.RegionConquestOnOneSide(self.__RoadEndPos1, [-self.__Direction[1], self.__Direction[0]],
@@ -232,7 +239,7 @@ class Building:
             self.Borders.append([MiddlePos, TopPos])
 
         EndPos = MiddlePos if Found else TopPos
-        Found, InterPos = self.RegionConquestFindInterPos(RootPos, EndPos, Normal, MaxDistance)
+        Found, InterPos = self.RegionConquestFindInterPos(RootPos, EndPos, Normal, MaxDistance, 6)
 
         if Found:
             self.Borders.append([RootPos, InterPos])
@@ -259,7 +266,7 @@ class Building:
             LoopTime = 0
             while True:
                 LoopTime += 1
-                if self.CheckLine(LastPos, Pos) or LoopTime > StepLength:
+                if self.CheckLine(LastPos, Pos) or LoopTime > self.Length:
                     break
                 Pos = [Pos[0] - self.__Direction[0], Pos[1] - self.__Direction[1]]
             self.Borders.append([LastPos, Pos])
@@ -275,7 +282,7 @@ class Building:
                 if self.CheckLine(StartPos, EndPos):
                     break
                 LoopTime += 1
-                if LoopTime > 5:
+                if LoopTime > self.Width / 2:
                     return StartPos
                 EndPos = [EndPos[0] + Direction[0], EndPos[1] + Direction[1]]
             StartPos = EndPos
@@ -300,17 +307,17 @@ class Building:
             MaxAngle -= 5
         return False, TopPos
 
-    def RegionConquestFindInterPos(self, RootPos, EndPos, Normal, MasDistance):
+    def RegionConquestFindInterPos(self, RootPos, EndPos, Normal, MaxDistance, StepNum):
         BorderLength = Distance(RootPos, EndPos)
         BorderDirection = Normalize([EndPos[0] - RootPos[0], EndPos[1] - RootPos[1]])
         BorderNormal = [-BorderDirection[1], BorderDirection[0]]
         if BorderNormal[0] * Normal[0] + BorderNormal[1] * Normal[1] > 0:
             BorderNormal = [-BorderNormal[0], -BorderNormal[1]]
-        InterPoints = [[RootPos[0] + BorderDirection[0] * i * BorderLength / 4,
-                        RootPos[1] + BorderDirection[1] * i * BorderLength / 4] for i in range(1, 4)]
-        InterDistances = [GetDistanceOnDirection(Pos, BorderNormal, MasDistance) for Pos in InterPoints]
+        InterPoints = [[RootPos[0] + BorderDirection[0] * i * BorderLength / StepNum,
+                        RootPos[1] + BorderDirection[1] * i * BorderLength / StepNum] for i in range(1, StepNum)]
+        InterDistances = [GetDistanceOnDirection(Pos, BorderNormal, MaxDistance) for Pos in InterPoints]
 
-        if min(InterDistances) == MasDistance:
+        if min(InterDistances) == MaxDistance:
             return False, EndPos
 
         MaxDistance = max(InterDistances)
@@ -322,35 +329,49 @@ class Building:
             if not self.CheckLine(RootPos, TmpPoint) or not self.CheckLine(EndPos, TmpPoint):
                 return True, InterPoint
             LoopTime += 1
-            if LoopTime > MasDistance:
+            if LoopTime > MaxDistance:
                 break
             InterPoint = TmpPoint
         return False, EndPos
 
-    def Draw(self, img, zoom):
+    def DrawPixel(self, img):
+        global Landmarks
+        for StartPos, EndPos in self.Borders:
+            IntersectNodes = GetIntersectNodes(StartPos, EndPos)
+            for Node in IntersectNodes:
+                if CheckNode(Node) and Landmarks[Node[0], Node[1]] == 0:
+                    Landmarks[Node[0], Node[1]] = 3
+                    img[Node[1], Node[0]] = [0, 255, 255]
+
+    def DrawLine(self, img, zoom):
         if len(self.Borders) == 0:
             return
         for Start, End in self.Borders:
             cv2.line(img, (int(Start[0] * zoom + zoom * 0.5), int(Start[1] * zoom + zoom * 0.5)),
-                     (int(End[0] * zoom + zoom * 0.5), int(End[1] * zoom + zoom * 0.5)), (255, 255, 0), 2)
+                     (int(End[0] * zoom + zoom * 0.5), int(End[1] * zoom + zoom * 0.5)), (255, 255, 0), 1)
 
 
 def mouse_event(event, x, y, flags, param):
     global zoom, mouse_state, img
 
+    if lock.locked():
+        return
+
+    lock.acquire()
     if event == cv2.EVENT_MOUSEMOVE:
         if mouse_state == 1:
             img_copy = np.copy(img)
             building = Building(0, 30, 30, [x / zoom, y / zoom])
             building.RoadConquest()
             building.RegionConquest()
-            building.Draw(img_copy, zoom)
+            building.DrawLine(img_copy, zoom)
             cv2.circle(img_copy, (x, y), 3, (0, 0, 255), -1)
             cv2.imshow('img', img_copy)
     elif event == cv2.EVENT_LBUTTONDOWN:
         mouse_state = 1
     elif event == cv2.EVENT_LBUTTONUP:
         mouse_state = 0
+    lock.release()
 
 
 if __name__ == '__main__':
