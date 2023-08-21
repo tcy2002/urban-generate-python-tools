@@ -67,6 +67,12 @@ def Normalize(Node):
     return [Node[0] / m, Node[1] / m]
 
 
+def Projection(Node, Root, Normal):
+    Direction = [Root[0] - Node[0], Root[1] - Node[1]]
+    Length = Direction[0] * Normal[0] + Direction[1] * Normal[1]
+    return [Node[0] + Normal[0] * Length, Node[1] + Normal[1] * Length]
+
+
 def GetNearestNode(Node, Nodes):
     MinDistance = 100000.0
     MinNode = [-1, -1]
@@ -201,97 +207,71 @@ class Building:
     def RegionConquest(self):
         Diff = [self.__RoadEndPos1[0] - self.__RoadEndPos2[0], self.__RoadEndPos1[1] - self.__RoadEndPos2[1]]
         DiffOnDirection = Diff[0] * self.__Direction[0] + Diff[1] * self.__Direction[1]
-        self.RegionConquestOnOneSide(self.__RoadEndPos1, [-self.__Direction[1], self.__Direction[0]],
-                                     self.Length - DiffOnDirection / 2, 30)
-        self.RegionConquestOnOneSide(self.__RoadEndPos2, [self.__Direction[1], -self.__Direction[0]],
-                                     self.Length + DiffOnDirection / 2, 30)
+        TopPos1 = self.RegionConquestOnOneSide(self.__RoadEndPos1, [-self.__Direction[1], self.__Direction[0]],
+                                               self.Length - DiffOnDirection / 2)
+        TopPos2 = self.RegionConquestOnOneSide(self.__RoadEndPos2, [self.__Direction[1], -self.__Direction[0]],
+                                               self.Length + DiffOnDirection / 2)
 
-    def RegionConquestOnOneSide(self, RootPos, Normal, Length, MaxAngle):
+        MiddlePos = [(self.__RoadEndPos1[0] + self.__RoadEndPos2[0]) / 2,
+                     (self.__RoadEndPos1[1] + self.__RoadEndPos2[1]) / 2]
+        MiddlePos = [MiddlePos[0] + self.__Direction[0] * self.Length,
+                     MiddlePos[1] + self.__Direction[1] * self.Length]
+        self.RegionConquestOnTop(TopPos1, TopPos2, MiddlePos, 6)
+
+    def RegionConquestOnOneSide(self, RootPos, Normal, Length):
         TopPos = self.RegionConquestFindTopPos(RootPos, Normal, 6, Length / 6)
 
-        RoadNodes = GetNodesInRadius(TopPos, self.Length * np.sin(np.radians(MaxAngle)), 1)
+        MaxAngle = 30
+        MaxDistance = Length * np.sin(np.radians(MaxAngle))
+        RoadNodes = GetNodesInRadius(TopPos, MaxDistance, 1)
         if len(RoadNodes) == 0:
             self.Borders.append([RootPos, TopPos])
             return TopPos
 
-        MiddlePos = [-1, -1]
-        Found = False
-        FirstFlag = True
-        while MaxAngle > 0:
-            Rad = np.radians(MaxAngle)
-            Tan = np.tan(Rad)
-            Cos = np.cos(Rad)
-            Len = Distance(TopPos, RootPos)
-            R = Normalize([TopPos[0] - RootPos[0] + Len * Tan * -Normal[0],
-                           TopPos[1] - RootPos[1] + Len * Tan * -Normal[1]])
-            R = [R[0] * Len * Cos, R[1] * Len * Cos]
-            MiddlePos = [RootPos[0] + R[0], RootPos[1] + R[1]]
-
-            IntersectNodes = GetIntersectNodes(RootPos, MiddlePos)
-            Flag = False
-            for IntersectNode in IntersectNodes:
-                if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
-                    Flag = True
-                    break
-            if not Flag:
-                if FirstFlag:
-                    self.Borders.append([RootPos, TopPos])
-                    return TopPos
-                Found = True
-                break
-            FirstFlag = False
-            MaxAngle -= 5
-
+        Found, MiddlePos = self.RegionConquestFindMiddlePos(RootPos, TopPos, Normal, MaxAngle)
         if Found:
             self.Borders.append([MiddlePos, TopPos])
 
         EndPos = MiddlePos if Found else TopPos
-
-        BorderLength = Distance(RootPos, EndPos)
-        BorderDirection = Normalize([EndPos[0] - RootPos[0], EndPos[1] - RootPos[1]])
-        BorderNormal = [-BorderDirection[1], BorderDirection[0]]
-        if BorderNormal[0] * Normal[0] + BorderNormal[1] * Normal[1] > 0:
-            BorderNormal = [-BorderNormal[0], -BorderNormal[1]]
-        InterPoints = [[RootPos[0] + BorderDirection[0] * i * BorderLength / 4,
-                        RootPos[1] + BorderDirection[1] * i * BorderLength / 4] for i in range(1, 4)]
-        InterDistances = [GetDistanceOnDirection(Pos, BorderNormal, self.Width / 2) for Pos in InterPoints]
-
-        if min(InterDistances) == self.Width / 2:
-            self.Borders.append([RootPos, EndPos])
-            return TopPos
-
-        MaxDistance = max(InterDistances)
-        MaxIndex = InterDistances.index(MaxDistance)
-        InterPoint = InterPoints[MaxIndex]
-        LoopTime = 0
-        Found = False
-        while True:
-            TmpPoint = [InterPoint[0] + BorderNormal[0], InterPoint[1] + BorderNormal[1]]
-            IntersectNodes1 = GetIntersectNodes(RootPos, TmpPoint)
-            IntersectNodes2 = GetIntersectNodes(TmpPoint, EndPos)
-            Flag = False
-            for IntersectNode in IntersectNodes1:
-                if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
-                    Flag = True
-                    break
-            for IntersectNode in IntersectNodes2:
-                if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
-                    Flag = True
-                    break
-            if Flag:
-                Found = True
-                break
-            LoopTime += 1
-            if LoopTime > self.Width / 2:
-                break
-            InterPoint = TmpPoint
+        Found, InterPos = self.RegionConquestFindInterPos(RootPos, EndPos, Normal, MaxDistance)
 
         if Found:
-            self.Borders.append([RootPos, InterPoint])
-            self.Borders.append([InterPoint, EndPos])
+            self.Borders.append([RootPos, InterPos])
+            self.Borders.append([InterPos, EndPos])
         else:
             self.Borders.append([RootPos, EndPos])
         return TopPos
+
+    def RegionConquestOnTop(self, Pos1, Pos2, MiddlePos, StepNum):
+        Direction = Normalize([Pos2[0] - Pos1[0], Pos2[1] - Pos1[1]])
+        Sin = abs(Direction[0] * self.__Direction[1] - Direction[1] * self.__Direction[0])
+        Length = Distance(Pos1, Pos2) * Sin
+        StepLength = Length / StepNum
+
+        StartPos = Projection(Pos1, MiddlePos, self.__Direction)
+        StartDirection = [-self.__Direction[1], self.__Direction[0]]
+        if StartDirection[0] * Direction[0] + StartDirection[1] * Direction[1] < 0:
+            StartDirection = [-StartDirection[0], -StartDirection[1]]
+
+        LastPos = Pos1
+        for i in range(1, StepNum + 1):
+            Pos = [StartPos[0] + StartDirection[0] * StepLength * i,
+                   StartPos[1] + StartDirection[1] * StepLength * i] if i < StepNum else Pos2
+            LoopTime = 0
+            while True:
+                IntersectNodes = GetIntersectNodes(LastPos, Pos)
+                Flag = False
+                for IntersectNode in IntersectNodes:
+                    if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
+                        Flag = True
+                        break
+                LoopTime += 1
+                if not Flag or LoopTime > StepLength:
+                    break
+                Pos = [Pos[0] - self.__Direction[0], Pos[1] - self.__Direction[1]]
+            self.Borders.append([LastPos, Pos])
+            LastPos = Pos
+
 
     def RegionConquestFindTopPos(self, RootPos, Direction, StepNum, StepLength):
         StartPos = RootPos
@@ -320,8 +300,69 @@ class Building:
             StartPos = EndPos
         return StartPos
 
-    def RegionConquestFindMiddlePos(self):
-        pass
+    def RegionConquestFindMiddlePos(self, RootPos, TopPos, Normal, MaxAngle):
+        FirstFlag = True
+        while MaxAngle > 0:
+            Rad = np.radians(MaxAngle)
+            Tan = np.tan(Rad)
+            Cos = np.cos(Rad)
+            Len = Distance(TopPos, RootPos)
+            R = Normalize([TopPos[0] - RootPos[0] + Len * Tan * -Normal[0],
+                           TopPos[1] - RootPos[1] + Len * Tan * -Normal[1]])
+            R = [R[0] * Len * Cos, R[1] * Len * Cos]
+            MiddlePos = [RootPos[0] + R[0], RootPos[1] + R[1]]
+
+            IntersectNodes = GetIntersectNodes(RootPos, MiddlePos)
+            Flag = False
+            for IntersectNode in IntersectNodes:
+                if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
+                    Flag = True
+                    break
+            if not Flag:
+                if FirstFlag:
+                    return False, TopPos
+                return True, MiddlePos
+            FirstFlag = False
+            MaxAngle -= 5
+        return False, TopPos
+
+    def RegionConquestFindInterPos(self, RootPos, EndPos, Normal, MasDistance):
+        BorderLength = Distance(RootPos, EndPos)
+        BorderDirection = Normalize([EndPos[0] - RootPos[0], EndPos[1] - RootPos[1]])
+        BorderNormal = [-BorderDirection[1], BorderDirection[0]]
+        if BorderNormal[0] * Normal[0] + BorderNormal[1] * Normal[1] > 0:
+            BorderNormal = [-BorderNormal[0], -BorderNormal[1]]
+        InterPoints = [[RootPos[0] + BorderDirection[0] * i * BorderLength / 4,
+                        RootPos[1] + BorderDirection[1] * i * BorderLength / 4] for i in range(1, 4)]
+        InterDistances = [GetDistanceOnDirection(Pos, BorderNormal, MasDistance) for Pos in InterPoints]
+
+        if min(InterDistances) == MasDistance:
+            return False, EndPos
+
+        MaxDistance = max(InterDistances)
+        MaxIndex = InterDistances.index(MaxDistance)
+        InterPoint = InterPoints[MaxIndex]
+        LoopTime = 0
+        while True:
+            TmpPoint = [InterPoint[0] + BorderNormal[0], InterPoint[1] + BorderNormal[1]]
+            IntersectNodes1 = GetIntersectNodes(RootPos, TmpPoint)
+            IntersectNodes2 = GetIntersectNodes(TmpPoint, EndPos)
+            Flag = False
+            for IntersectNode in IntersectNodes1:
+                if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
+                    Flag = True
+                    break
+            for IntersectNode in IntersectNodes2:
+                if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
+                    Flag = True
+                    break
+            if Flag:
+                return True, InterPoint
+            LoopTime += 1
+            if LoopTime > MasDistance:
+                break
+            InterPoint = TmpPoint
+        return False, EndPos
 
     def Draw(self, img, zoom):
         if len(self.Borders) == 0:
