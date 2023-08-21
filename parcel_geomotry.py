@@ -154,9 +154,19 @@ class Building:
         self.Borders = []
 
         self.__Direction = [0, 1]
-
         self.__RoadEndPos1 = [0, 0]
         self.__RoadEndPos2 = [0, 0]
+
+    def CheckLine(self, StartPos, EndPos):
+        IntersectNodes = GetIntersectNodes(StartPos, EndPos)
+        NearByNodes = GetNodesInRadius(EndPos, 2, 1)
+        for IntersectNode in IntersectNodes:
+            if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
+                return False
+        for NearByNode in NearByNodes:
+            if not CheckNode(NearByNode) or Landmarks[NearByNode[0], NearByNode[1]] == 1:
+                return False
+        return True
 
     def RoadConquest(self):
         NearestRoadNode = GetNearestNode(self.Center, GetNodesInRadius(self.Center, self.Length, 1))
@@ -183,18 +193,7 @@ class Building:
             EndPos = [RootPos[0] + Direction[0] * StepLength, RootPos[1] + Direction[1] * StepLength]
             LoopTime = 0
             while True:
-                IntersectNodes = GetIntersectNodes(RootPos, EndPos)
-                NearByNodes = GetNodesInRadius(EndPos, 2, 1)
-                Flag = False
-                for IntersectNode in IntersectNodes:
-                    if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
-                        Flag = True
-                        break
-                for NearByNode in NearByNodes:
-                    if not CheckNode(NearByNode) or Landmarks[NearByNode[0], NearByNode[1]] == 1:
-                        Flag = True
-                        break
-                if not Flag:
+                if self.CheckLine(RootPos, EndPos):
                     break
                 LoopTime += 1
                 if LoopTime > StepLength:
@@ -259,19 +258,12 @@ class Building:
                    StartPos[1] + StartDirection[1] * StepLength * i] if i < StepNum else Pos2
             LoopTime = 0
             while True:
-                IntersectNodes = GetIntersectNodes(LastPos, Pos)
-                Flag = False
-                for IntersectNode in IntersectNodes:
-                    if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
-                        Flag = True
-                        break
                 LoopTime += 1
-                if not Flag or LoopTime > StepLength:
+                if self.CheckLine(LastPos, Pos) or LoopTime > StepLength:
                     break
                 Pos = [Pos[0] - self.__Direction[0], Pos[1] - self.__Direction[1]]
             self.Borders.append([LastPos, Pos])
             LastPos = Pos
-
 
     def RegionConquestFindTopPos(self, RootPos, Direction, StepNum, StepLength):
         StartPos = RootPos
@@ -280,18 +272,7 @@ class Building:
                       RootPos[1] + self.__Direction[1] * StepLength * (i + 1)]
             LoopTime = 0
             while True:
-                IntersectNodes = GetIntersectNodes(StartPos, EndPos)
-                NearByNodes = GetNodesInRadius(EndPos, 2, 1)
-                Flag = False
-                for IntersectNode in IntersectNodes:
-                    if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
-                        Flag = True
-                        break
-                for NearByNode in NearByNodes:
-                    if not CheckNode(NearByNode) or Landmarks[NearByNode[0], NearByNode[1]] == 1:
-                        Flag = True
-                        break
-                if not Flag:
+                if self.CheckLine(StartPos, EndPos):
                     break
                 LoopTime += 1
                 if LoopTime > 5:
@@ -311,14 +292,7 @@ class Building:
                            TopPos[1] - RootPos[1] + Len * Tan * -Normal[1]])
             R = [R[0] * Len * Cos, R[1] * Len * Cos]
             MiddlePos = [RootPos[0] + R[0], RootPos[1] + R[1]]
-
-            IntersectNodes = GetIntersectNodes(RootPos, MiddlePos)
-            Flag = False
-            for IntersectNode in IntersectNodes:
-                if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
-                    Flag = True
-                    break
-            if not Flag:
+            if self.CheckLine(RootPos, MiddlePos):
                 if FirstFlag:
                     return False, TopPos
                 return True, MiddlePos
@@ -345,18 +319,7 @@ class Building:
         LoopTime = 0
         while True:
             TmpPoint = [InterPoint[0] + BorderNormal[0], InterPoint[1] + BorderNormal[1]]
-            IntersectNodes1 = GetIntersectNodes(RootPos, TmpPoint)
-            IntersectNodes2 = GetIntersectNodes(TmpPoint, EndPos)
-            Flag = False
-            for IntersectNode in IntersectNodes1:
-                if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
-                    Flag = True
-                    break
-            for IntersectNode in IntersectNodes2:
-                if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
-                    Flag = True
-                    break
-            if Flag:
+            if not self.CheckLine(RootPos, TmpPoint) or not self.CheckLine(EndPos, TmpPoint):
                 return True, InterPoint
             LoopTime += 1
             if LoopTime > MasDistance:
