@@ -4,22 +4,39 @@ import threading
 
 # algorithm of parcel division based on geometry
 
-# 0: Land, 1: Road, 3x: Building, 4:Occupied by building
+# 0: Land, 1: Road, 3x: Building, 4:Occupied by building, 5: Virtual Border
 Landmarks: np.ndarray
 Buildings = []
 lock = threading.Lock()
 
 
 def load_data_from_png(path):
-    global Landmarks
+    global Landmarks, Buildings
     img = cv2.imread(path)
     Landmarks = np.zeros((img.shape[1], img.shape[0]), np.uint8)
-    for x in range(img.shape[1]):
-        for y in range(img.shape[0]):
-            if img[y, x, 0] == 255 and img[y, x, 1] == 255 and img[y, x, 2] == 255:
-                Landmarks[x, y] = 1
-            elif img[y, x, 0] == 0 and img[y, x, 1] == 255 and img[y, x, 2] == 255:
-                Landmarks[x, y] = 3
+    roads = np.where((img == [255, 255, 255]).all(axis=2))
+    buildings1 = np.where((img == [0, 255, 0]).all(axis=2))
+    buildings2 = np.where((img == [255, 0, 0]).all(axis=2))
+    buildings3 = np.where((img == [0, 0, 255]).all(axis=2))
+    Landmarks[roads[1], roads[0]] = 1
+    for i in range(len(buildings1[0])):
+        Buildings.append(FBuilding(i, 15, 15, [buildings1[1][i], buildings1[0][i]]))
+    size = len(Buildings)
+    for i in range(len(buildings2[0])):
+        Buildings.append(FBuilding(i + size, 25, 25, [buildings2[1][i], buildings2[0][i]]))
+    size = len(Buildings)
+    for i in range(len(buildings3[0])):
+        Buildings.append(FBuilding(i + size, 50, 50, [buildings3[1][i], buildings3[0][i]]))
+
+
+def MarkNeighborsOfAllBuildings():
+    global Buildings
+    for Building in Buildings:
+        for Other in Buildings:
+            if Building.Index != Other.Index and \
+                    Distance(Building.Center, Other.Center) < 1.5 * Building.Length:
+                Building.AddNeighbor(Other.Index)
+                Other.AddNeighbor(Building.Index)
 
 
 def Get8Neighbors(Node):
@@ -50,6 +67,14 @@ def CheckNode(Node):
 def Distance(Node1, Node2):
     return np.sqrt((Node1[0] - Node2[0]) * (Node1[0] - Node2[0]) +
                    (Node1[1] - Node2[1]) * (Node1[1] - Node2[1]))
+
+
+def Dot(Node1, Node2):
+    return Node1[0] * Node2[0] + Node1[1] * Node2[1]
+
+
+def Lerp(Node1, Node2, Rate):
+    return [Node1[0] * Rate + Node2[0] * (1 - Rate), Node1[1] * Rate + Node2[1] * (1 - Rate)]
 
 
 def Average(Nodes):
@@ -86,7 +111,7 @@ def GetNearestNode(Node, Nodes):
     return MinNode
 
 
-def GetNodesInRadius(Node, Radius, Type):
+def GetNodesInRadius(Node, Radius, Types):
     Result = []
     DRadius = Radius + 0.3
     IRadius = int(Radius)
@@ -98,7 +123,7 @@ def GetNodesInRadius(Node, Radius, Type):
         for Col in range(CentralCol - RowHalfLength if CentralCol - RowHalfLength > 0 else 0,
                          CentralCol + RowHalfLength + 1 if CentralCol + RowHalfLength < Landmarks.shape[0] else
                          Landmarks.shape[0]):
-            if Landmarks[Col, Row] == Type:
+            if Landmarks[Col, Row] in Types:
                 Result.append([Col, Row])
     return Result
 
@@ -124,6 +149,8 @@ def GetNextIntersectNode(CurrentNode, RootPos, Direction):
 def GetDistanceOnDirection(RootPos, Direction, MaxDistance):
     for i in range(1, int(MaxDistance) + 1):
         Pos = [RootPos[0] + Direction[0] * i, RootPos[1] + Direction[1] * i]
+        if not CheckNode([int(Pos[0]), int(Pos[1])]):
+            return MaxDistance
         if Landmarks[int(Pos[0]), int(Pos[1])] == 1:
             return i
     return MaxDistance
@@ -133,18 +160,18 @@ def GetIntersectNodes(RootPos, EndPos):
     RootNode = [round(RootPos[0]), round(RootPos[1])]
     EndNode = [round(EndPos[0]), round(EndPos[1])]
     Direction = Normalize([EndPos[0] - RootPos[0], EndPos[1] - RootPos[1]])
-    IntersectNodes = [RootNode, EndNode]
+    IntersectNodes = [RootNode]
     CurrentNode = RootNode
     CurrentPos = RootPos
     while True:
-        CurrentNode, CurrentPos = GetNextIntersectNode(CurrentNode, CurrentPos, Direction)
         if CurrentNode == EndNode:
             break
+        CurrentNode, CurrentPos = GetNextIntersectNode(CurrentNode, CurrentPos, Direction)
         IntersectNodes.append(CurrentNode)
     return IntersectNodes
 
 
-class Building:
+class FBuilding:
     def __init__(self, Index, Width, Length, Center):
         self.Index = Index
         self.Width = Width
@@ -157,38 +184,96 @@ class Building:
         self.__Direction = [0, 1]
         self.__RoadEndPos1 = [0, 0]
         self.__RoadEndPos2 = [0, 0]
+        self.__Neighbors = dict()
+        self.__VirtualBorderNodes = []
+        self.__NearestRoadNode = GetNearestNode(Center, GetNodesInRadius(Center, Length, [1]))
+
+    def AddNeighbor(self, Index):
+        global Buildings
+        self.__Neighbors[Index] = Buildings[Index]
 
     def CheckLine(self, StartPos, EndPos):
         IntersectNodes = GetIntersectNodes(StartPos, EndPos)
-        NearByNodes = GetNodesInRadius(EndPos, 2, 1)
+        NearByNodes = GetNodesInRadius(EndPos, 1.5, [1, 5])
         for IntersectNode in IntersectNodes:
-            if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] == 1:
+            if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] in [1, 5]:
                 return False
-        for NearByNode in NearByNodes:
-            if not CheckNode(NearByNode) or Landmarks[NearByNode[0], NearByNode[1]] == 1:
-                return False
-        return True
+        return len(NearByNodes) == 0
+
+    def DrawPixel(self, img):
+        global Landmarks
+        for StartPos, EndPos in self.Borders:
+            IntersectNodes = GetIntersectNodes(StartPos, EndPos)
+            for Node in IntersectNodes:
+                if CheckNode(Node) and Landmarks[Node[0], Node[1]] == 0:
+                    Landmarks[Node[0], Node[1]] = 3
+                    img[Node[1], Node[0]] = [0, 255, 255]
+
+    def DrawLine(self, img, zoom):
+        if len(self.Borders) == 0:
+            return
+        for Start, End in self.Borders:
+            cv2.line(img, (int(Start[0] * zoom + zoom * 0.5), int(Start[1] * zoom + zoom * 0.5)),
+                     (int(End[0] * zoom + zoom * 0.5), int(End[1] * zoom + zoom * 0.5)), (255, 255, 0), 1)
+
+    def Init(self):
+        for Neighbor in self.__Neighbors.values():
+            if not Neighbor.__Valid:
+                continue
+
+            IntersectNodes = GetIntersectNodes(self.Center, Neighbor.Center)
+            Flag = False
+            for Node in IntersectNodes:
+                if CheckNode(Node) and Landmarks[Node[0], Node[1]] == 1:
+                    Flag = True
+                    break
+            if Flag:
+                continue
+
+            Rate = self.Length / (self.Length + Neighbor.Length)
+            Center = Lerp(self.Center, Neighbor.Center, 1 - Rate)
+            Direction = Normalize([self.Center[1] - Neighbor.Center[1], Neighbor.Center[0] - self.Center[0]])
+            Length = max(self.Length, Neighbor.Length)
+            Start = [Center[0] - Direction[0] * Length, Center[1] - Direction[1] * Length]
+
+            for i in range(Length * 2 + 1):
+                Node = [round(Start[0] + Direction[0] * i), round(Start[1] + Direction[1] * i)]
+                if CheckNode(Node) and Landmarks[Node[0], Node[1]] == 0:
+                    self.__VirtualBorderNodes.append(Node)
+                    Landmarks[Node[0], Node[1]] = 5
+
+    def End(self):
+        global Landmarks
+        for Node in self.__VirtualBorderNodes:
+            Landmarks[Node[0], Node[1]] = 0
 
     def RoadConquest(self):
         if not self.__Valid:
             return
-        NearestRoadNode = GetNearestNode(self.Center, GetNodesInRadius(self.Center, self.Length, 1))
-        if NearestRoadNode == [-1, -1]:
-            return
+        if self.__NearestRoadNode != [-1, -1]:
+            self.__Direction = Normalize([self.Center[0] - self.__NearestRoadNode[0],
+                                          self.Center[1] - self.__NearestRoadNode[1]])
+            RootPos = [self.__NearestRoadNode[0] + self.__Direction[0] * 3,
+                       self.__NearestRoadNode[1] + self.__Direction[1] * 3]
+        else:
+            self.__Direction = [0, 1]
+            RootPos = [self.Center[0],
+                       (self.Center[1] - self.Length / 2) if self.Center[1] - self.Length / 2 > 0 else 0]
 
-        DistanceToRoad = 3
-        self.__Direction = Normalize([self.Center[0] - NearestRoadNode[0], self.Center[1] - NearestRoadNode[1]])
-        RootPos = [NearestRoadNode[0] + self.__Direction[0] * DistanceToRoad,
-                   NearestRoadNode[1] + self.__Direction[1] * DistanceToRoad]
-
-        StepNum1, self.__RoadEndPos1 = self.RoadConquestOnOneSide(RootPos, [self.__Direction[1], -self.__Direction[0]], 3, self.Width / 6)
-        StepNum2, self.__RoadEndPos2 = self.RoadConquestOnOneSide(RootPos, [-self.__Direction[1], self.__Direction[0]], 3, self.Width / 6)
+        StepNum1, self.__RoadEndPos1 = self.RoadConquestOnOneSide(RootPos, [self.__Direction[1], -self.__Direction[0]],
+                                                                  3, self.Width / 6)
+        StepNum2, self.__RoadEndPos2 = self.RoadConquestOnOneSide(RootPos, [-self.__Direction[1], self.__Direction[0]],
+                                                                  3, self.Width / 6)
 
         if StepNum1 < 3 and StepNum2 == 3:
-            _, self.__RoadEndPos2 = self.RoadConquestOnOneSide(self.__RoadEndPos2, [-self.__Direction[1], self.__Direction[0]], 3 - StepNum1, self.Width / 6)
+            _, self.__RoadEndPos2 = self.RoadConquestOnOneSide(self.__RoadEndPos2,
+                                                               [-self.__Direction[1], self.__Direction[0]],
+                                                               3 - StepNum1, self.Width / 6)
         elif StepNum1 == 3 and StepNum2 < 3:
-            _, self.__RoadEndPos1 = self.RoadConquestOnOneSide(self.__RoadEndPos1, [self.__Direction[1], -self.__Direction[0]], 3 - StepNum2, self.Width / 6)
-        elif StepNum1 < 3 and StepNum2 < 3:
+            _, self.__RoadEndPos1 = self.RoadConquestOnOneSide(self.__RoadEndPos1,
+                                                               [self.__Direction[1], -self.__Direction[0]],
+                                                               3 - StepNum2, self.Width / 6)
+        elif StepNum1 + StepNum2 < 3:
             self.Borders.clear()
             self.__Valid = False
 
@@ -229,7 +314,7 @@ class Building:
 
         MaxAngle = 30
         MaxDistance = Length * np.sin(np.radians(MaxAngle))
-        RoadNodes = GetNodesInRadius(TopPos, MaxDistance, 1)
+        RoadNodes = GetNodesInRadius(TopPos, MaxDistance, [1, 5])
         if len(RoadNodes) == 0:
             self.Borders.append([RootPos, TopPos])
             return TopPos
@@ -334,22 +419,6 @@ class Building:
             InterPoint = TmpPoint
         return False, EndPos
 
-    def DrawPixel(self, img):
-        global Landmarks
-        for StartPos, EndPos in self.Borders:
-            IntersectNodes = GetIntersectNodes(StartPos, EndPos)
-            for Node in IntersectNodes:
-                if CheckNode(Node) and Landmarks[Node[0], Node[1]] == 0:
-                    Landmarks[Node[0], Node[1]] = 3
-                    img[Node[1], Node[0]] = [0, 255, 255]
-
-    def DrawLine(self, img, zoom):
-        if len(self.Borders) == 0:
-            return
-        for Start, End in self.Borders:
-            cv2.line(img, (int(Start[0] * zoom + zoom * 0.5), int(Start[1] * zoom + zoom * 0.5)),
-                     (int(End[0] * zoom + zoom * 0.5), int(End[1] * zoom + zoom * 0.5)), (255, 255, 0), 1)
-
 
 def mouse_event(event, x, y, flags, param):
     global zoom, mouse_state, img
@@ -361,7 +430,7 @@ def mouse_event(event, x, y, flags, param):
     if event == cv2.EVENT_MOUSEMOVE:
         if mouse_state == 1:
             img_copy = np.copy(img)
-            building = Building(0, 30, 30, [x / zoom, y / zoom])
+            building = FBuilding(0, 30, 30, [x / zoom, y / zoom])
             building.RoadConquest()
             building.RegionConquest()
             building.DrawLine(img_copy, zoom)
@@ -375,15 +444,28 @@ def mouse_event(event, x, y, flags, param):
 
 
 if __name__ == '__main__':
-    load_data_from_png('parcel_geo.png')
-    img = cv2.imread('parcel_geo.png')
-    img = cv2.resize(img, (1000, 1000), interpolation=cv2.INTER_NEAREST)
-    zoom = 5
-    mouse_state = 0
-    cv2.namedWindow('img')
-    cv2.setMouseCallback('img', mouse_event)
+    load_data_from_png('parcel_real_h.png')
+    img = cv2.imread('parcel_real_h.png')
+    MarkNeighborsOfAllBuildings()
+    Indices = range(103, 147)
+    for Index in Indices:
+        Buildings[Index].Init()
+        Buildings[Index].RoadConquest()
+        Buildings[Index].RegionConquest()
+        Buildings[Index].End()
+        Buildings[Index].DrawLine(img, 1)
     cv2.imshow('img', img)
     cv2.waitKey(0)
+
+    # # 单个地块生成测试
+    # img = cv2.imread('parcel_geo_test.png')
+    # img = cv2.resize(img, (1000, 1000), interpolation=cv2.INTER_NEAREST)
+    # zoom = 5
+    # mouse_state = 0
+    # cv2.namedWindow('img')
+    # cv2.setMouseCallback('img', mouse_event)
+    # cv2.imshow('img', img)
+    # cv2.waitKey(0)
 
     # # 检查射线经过的像素的的情况
     # img = np.zeros((10, 10, 3), np.uint8)
@@ -391,9 +473,10 @@ if __name__ == '__main__':
     #     for j in range(10):
     #         img[i, j, :] = [0, 0, 0] if (i + j) % 2 == 0 else [255, 255, 255]
     #
-    # StartPos = [3.2, 3]
-    # EndPos = [4.8, 9]
+    # StartPos = [440.3305140209734, 324.9424632221321]
+    # EndPos = [439.6986952374362, 325.3503742964159]
     # Nodes = GetIntersectNodes(StartPos, EndPos)
+
     # for Node in Nodes:
     #     if Node[0] < 0 or Node[0] > 9 or Node[1] < 0 or Node[1] > 9:
     #         continue
