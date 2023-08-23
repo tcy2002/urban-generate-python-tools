@@ -338,7 +338,7 @@ def GenerateOnParcel():
 
 
 if __name__ == '__main__':
-    file = 'parcel_real_p.png'
+    file = 'parcel_real_h.png'
     load_data_from_png(file)
     img = cv2.imread(file)
     hashmap = dict()
@@ -388,4 +388,3 @@ if __name__ == '__main__':
     # img = cv2.resize(img, (img.shape[1] * 2, img.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
     cv2.imshow('img', img)
     cv2.waitKey(0)
-    cv2.imwrite('parcel_real_p_result.png', img)

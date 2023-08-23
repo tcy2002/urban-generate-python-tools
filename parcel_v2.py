@@ -22,6 +22,8 @@ def load_data_from_png(path):
                 Landmarks[x, y] = 32
             elif img[y, x, 0] == 0 and img[y, x, 1] == 0 and img[y, x, 2] == 255:
                 Landmarks[x, y] = 33
+            elif img[y, x, 0] == 0 and img[y, x, 1] == 255 and img[y, x, 2] == 255:
+                Landmarks[x, y] = 34
             elif img[y, x, 0] == 255 and img[y, x, 1] == 255 and img[y, x, 2] == 255:
                 Landmarks[x, y] = 1
 
@@ -277,7 +279,7 @@ class Building:
             OccupiedMap[Node[0], Node[1]] = self.Index
             self.__RegionConqueredDist[EndNodeIndex] += 1
             img[Node[1], Node[0]] = color[self.__RegionConqueredDist[EndNodeIndex]]
-        elif Landmarks[Node[0], Node[1]] in [31, 32, 33] or \
+        elif Landmarks[Node[0], Node[1]] in [31, 32, 33, 34] or \
                 (Landmarks[Node[0], Node[1]] == 4 and OccupiedMap[Node[0], Node[1]] == self.Index):
             self.__RegionConqueredDist[EndNodeIndex] += 1
         else:
@@ -377,7 +379,7 @@ def RegionConquest(OccupiedMap: dict):
 
 
 if __name__ == '__main__':
-    file = 'parcel_real_h.png'
+    file = 'parcel_real2.png'
     load_data_from_png(file)
     img = cv2.imread(file)
     hashmap = dict()
@@ -385,10 +387,12 @@ if __name__ == '__main__':
     buildings1 = np.where(Landmarks == 31)
     buildings2 = np.where(Landmarks == 32)
     buildings3 = np.where(Landmarks == 33)
+    buildings4 = np.where(Landmarks == 34)
     size1 = len(buildings1[0])
     size2 = len(buildings2[0])
     size3 = len(buildings3[0])
-    color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size1 + size2 + size3)]
+    size4 = len(buildings4[0])
+    color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size1 + size2 + size3 + size4)]
 
     radius = 10
     target = range(size1)
@@ -400,10 +404,15 @@ if __name__ == '__main__':
     for i, x in enumerate(target):
         Buildings.append(Building(i + size1, radius, [buildings2[0][x], buildings2[1][x]]))
 
-    radius = 20
+    radius = 25
     target = range(size3)
     for i, x in enumerate(target):
         Buildings.append(Building(i + size1 + size2, radius, [buildings3[0][x], buildings3[1][x]]))
+
+    radius = 40
+    target = range(size4)
+    for i, x in enumerate(target):
+        Buildings.append(Building(i + size1 + size2 + size3, radius, [buildings4[0][x], buildings4[1][x]]))
 
     RoadConquest(hashmap)
     RegionConquest(hashmap)
@@ -418,4 +427,4 @@ if __name__ == '__main__':
     img = cv2.resize(img, (img.shape[1] * 2, img.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
     cv2.imshow('img', img)
     cv2.waitKey(0)
-
+    cv2.imwrite('pixel_grow.png', img)

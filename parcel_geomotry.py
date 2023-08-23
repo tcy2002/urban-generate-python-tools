@@ -18,6 +18,7 @@ def load_data_from_png(path):
     buildings1 = np.where((img == [0, 255, 0]).all(axis=2))
     buildings2 = np.where((img == [255, 0, 0]).all(axis=2))
     buildings3 = np.where((img == [0, 0, 255]).all(axis=2))
+    buildings4 = np.where((img == [0, 255, 255]).all(axis=2))
     Landmarks[roads[1], roads[0]] = 1
     for i in range(len(buildings1[0])):
         Buildings.append(FBuilding(i, 15, 15, [buildings1[1][i], buildings1[0][i]]))
@@ -27,6 +28,9 @@ def load_data_from_png(path):
     size = len(Buildings)
     for i in range(len(buildings3[0])):
         Buildings.append(FBuilding(i + size, 50, 50, [buildings3[1][i], buildings3[0][i]]))
+    size = len(Buildings)
+    for i in range(len(buildings4[0])):
+        Buildings.append(FBuilding(i + size, 100, 100, [buildings4[1][i], buildings4[0][i]]))
 
 
 def MarkNeighborsOfAllBuildings():
@@ -470,29 +474,41 @@ def generate_parcel(Building):
     Building.End()
 
 
+def load_raw_png(path, out_path):
+    img = cv2.imread(path)
+    img[img != 255] = 0
+    cv2.imshow('img', img)
+    cv2.waitKey(0)
+    cv2.imwrite(out_path, img)
+
+
 if __name__ == '__main__':
-    load_data_from_png('parcel_real_h.png')
+    # load_raw_png('parcel_real_raw.png', 'parcel_real_h2.png')
+
+    load_data_from_png('parcel_real2.png')
     MarkNeighborsOfAllBuildings()
 
-    indices = [64]
-    # indices = range(0, 146)
-    for Building in Buildings:
-        generate_parcel(Building)
-    for Building in Buildings:
-        if Building.Redo:
-            Building.Borders.clear()
-            generate_parcel(Building)
-    img = cv2.imread('parcel_real_h.png')
-    colors = [(200, 200, 255), (0, 255, 255), (255, 255, 0)]
-    for Building in Buildings:
-        if Building.Width == 15:
+    # indices = [160]
+    indices = range(0, len(Buildings))
+    for index in indices:
+        generate_parcel(Buildings[index])
+    for index in indices:
+        if Buildings[index].Redo:
+            Buildings[index].Borders.clear()
+            generate_parcel(Buildings[index])
+    img = cv2.imread('parcel_real2.png')
+    colors = [(200, 200, 255), (0, 255, 255), (255, 255, 0), (0, 200, 255)]
+    for index in indices:
+        if Buildings[index].Width == 15:
             color = 0
-        elif Building.Width == 25:
+        elif Buildings[index].Width == 25:
             color = 1
-        else:
+        elif Buildings[index].Width == 50:
             color = 2
-        Building.DrawLine(img, 1, colors[color])
-    img = cv2.resize(img, (1608, 1034), interpolation=cv2.INTER_NEAREST)
+        else:
+            color = 3
+        Buildings[index].DrawLine(img, 1, colors[color])
+    img = cv2.resize(img, (img.shape[1] * 2, img.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
     cv2.imshow('img', img)
     cv2.waitKey(0)
     cv2.imwrite('geo_divide.png', img)
