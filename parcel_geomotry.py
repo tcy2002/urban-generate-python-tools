@@ -34,7 +34,7 @@ def MarkNeighborsOfAllBuildings():
     for Building in Buildings:
         for Other in Buildings:
             if Building.Index != Other.Index and \
-                    Distance(Building.Center, Other.Center) < 1.5 * Building.Length:
+                    Distance(Building.Center, Other.Center) < 2 * Building.Length:
                 Building.AddNeighbor(Other.Index)
                 Other.AddNeighbor(Building.Index)
 
@@ -146,17 +146,24 @@ def GetNextIntersectNode(CurrentNode, RootPos, Direction):
                 [RootPos[0] + Direction[0] * tv, RootPos[1] + Direction[1] * tv]
 
 
-def GetDistanceOnDirection(RootPos, Direction, MaxDistance):
-    for i in range(1, int(MaxDistance) + 1):
-        Pos = [RootPos[0] + Direction[0] * i, RootPos[1] + Direction[1] * i]
-        if not CheckNode([int(Pos[0]), int(Pos[1])]):
+def GetDistanceOnDirection(RootPos, Direction, MaxDistance, Types):
+    CurrentNode = [round(RootPos[0]), round(RootPos[1])]
+    CurrentPos = RootPos
+    while True:
+        CurrentNode, CurrentPos = GetNextIntersectNode(CurrentNode, CurrentPos, Direction)
+        Length = Distance(CurrentPos, RootPos)
+        if Length > MaxDistance or not CheckNode(CurrentNode):
             return MaxDistance
-        if Landmarks[int(Pos[0]), int(Pos[1])] == 1:
-            return i
-    return MaxDistance
+        if Landmarks[CurrentNode[0], CurrentNode[1]] in Types:
+            return Length
 
 
 def GetIntersectNodes(RootPos, EndPos):
+    if EndPos[0] % 0.5 == 0.0:
+        EndPos[0] += 0.001
+    if EndPos[1] % 0.5 == 0.0:
+        EndPos[1] += 0.001
+
     RootNode = [round(RootPos[0]), round(RootPos[1])]
     EndNode = [round(EndPos[0]), round(EndPos[1])]
     Direction = Normalize([EndPos[0] - RootPos[0], EndPos[1] - RootPos[1]])
@@ -179,6 +186,7 @@ class FBuilding:
         self.Center = Center
         self.Nodes = []
         self.Borders = []
+        self.Redo = False
 
         self.__Valid = True
         self.__Direction = [0, 1]
@@ -194,11 +202,15 @@ class FBuilding:
 
     def CheckLine(self, StartPos, EndPos):
         IntersectNodes = GetIntersectNodes(StartPos, EndPos)
-        NearByNodes = GetNodesInRadius(EndPos, 1.5, [1, 5])
         for IntersectNode in IntersectNodes:
             if not CheckNode(IntersectNode) or Landmarks[IntersectNode[0], IntersectNode[1]] in [1, 5]:
                 return False
-        return len(NearByNodes) == 0
+        EndPos = [round(EndPos[0]), round(EndPos[1])]
+        NearByNodes = Get4Neighbors(EndPos)
+        for NearByNode in NearByNodes:
+            if Landmarks[NearByNode[0], NearByNode[1]] in [1, 5]:
+                return False
+        return True
 
     def DrawPixel(self, img):
         global Landmarks
@@ -209,12 +221,12 @@ class FBuilding:
                     Landmarks[Node[0], Node[1]] = 3
                     img[Node[1], Node[0]] = [0, 255, 255]
 
-    def DrawLine(self, img, zoom):
+    def DrawLine(self, img, zoom, color):
         if len(self.Borders) == 0:
             return
         for Start, End in self.Borders:
             cv2.line(img, (int(Start[0] * zoom + zoom * 0.5), int(Start[1] * zoom + zoom * 0.5)),
-                     (int(End[0] * zoom + zoom * 0.5), int(End[1] * zoom + zoom * 0.5)), (255, 255, 0), 1)
+                     (int(End[0] * zoom + zoom * 0.5), int(End[1] * zoom + zoom * 0.5)), color, 1)
 
     def Init(self):
         for Neighbor in self.__Neighbors.values():
@@ -260,22 +272,25 @@ class FBuilding:
             RootPos = [self.Center[0],
                        (self.Center[1] - self.Length / 2) if self.Center[1] - self.Length / 2 > 0 else 0]
 
+        StepNum = 4
         StepNum1, self.__RoadEndPos1 = self.RoadConquestOnOneSide(RootPos, [self.__Direction[1], -self.__Direction[0]],
-                                                                  3, self.Width / 6)
+                                                                  StepNum, self.Width / (StepNum * 2))
         StepNum2, self.__RoadEndPos2 = self.RoadConquestOnOneSide(RootPos, [-self.__Direction[1], self.__Direction[0]],
-                                                                  3, self.Width / 6)
+                                                                  StepNum, self.Width / (StepNum * 2))
 
-        if StepNum1 < 3 and StepNum2 == 3:
+        if StepNum1 < StepNum and StepNum2 == StepNum:
             _, self.__RoadEndPos2 = self.RoadConquestOnOneSide(self.__RoadEndPos2,
                                                                [-self.__Direction[1], self.__Direction[0]],
-                                                               3 - StepNum1, self.Width / 6)
-        elif StepNum1 == 3 and StepNum2 < 3:
+                                                               (StepNum - StepNum1) * 2, self.Width / (StepNum * 4))
+        elif StepNum1 == StepNum and StepNum2 < StepNum:
             _, self.__RoadEndPos1 = self.RoadConquestOnOneSide(self.__RoadEndPos1,
                                                                [self.__Direction[1], -self.__Direction[0]],
-                                                               3 - StepNum2, self.Width / 6)
-        elif StepNum1 + StepNum2 < 3:
+                                                               (StepNum - StepNum2) * 2, self.Width / (StepNum * 4))
+        elif StepNum1 + StepNum2 < StepNum:
             self.Borders.clear()
             self.__Valid = False
+            for Neighbor in self.__Neighbors.values():
+                Neighbor.Redo = True
 
     def RoadConquestOnOneSide(self, RootPos, Direction, StepNum, StepLength):
         for i in range(StepNum):
@@ -303,16 +318,19 @@ class FBuilding:
         TopPos2 = self.RegionConquestOnOneSide(self.__RoadEndPos2, [self.__Direction[1], -self.__Direction[0]],
                                                self.Length + DiffOnDirection / 2)
 
+        Length = Distance(TopPos1, TopPos2)
+        if Length < 1:
+            return
         MiddlePos = [(self.__RoadEndPos1[0] + self.__RoadEndPos2[0]) / 2,
                      (self.__RoadEndPos1[1] + self.__RoadEndPos2[1]) / 2]
         MiddlePos = [MiddlePos[0] + self.__Direction[0] * self.Length,
                      MiddlePos[1] + self.__Direction[1] * self.Length]
-        self.RegionConquestOnTop(TopPos1, TopPos2, MiddlePos, 6)
+        self.RegionConquestOnTop(TopPos1, TopPos2, MiddlePos, round(Length / (self.Width / 5)) + 1)
 
     def RegionConquestOnOneSide(self, RootPos, Normal, Length):
         TopPos = self.RegionConquestFindTopPos(RootPos, Normal, 6, Length / 6)
 
-        MaxAngle = 30
+        MaxAngle = 40
         MaxDistance = Length * np.sin(np.radians(MaxAngle))
         RoadNodes = GetNodesInRadius(TopPos, MaxDistance, [1, 5])
         if len(RoadNodes) == 0:
@@ -393,6 +411,7 @@ class FBuilding:
         return False, TopPos
 
     def RegionConquestFindInterPos(self, RootPos, EndPos, Normal, MaxDistance, StepNum):
+        global img
         BorderLength = Distance(RootPos, EndPos)
         BorderDirection = Normalize([EndPos[0] - RootPos[0], EndPos[1] - RootPos[1]])
         BorderNormal = [-BorderDirection[1], BorderDirection[0]]
@@ -400,13 +419,12 @@ class FBuilding:
             BorderNormal = [-BorderNormal[0], -BorderNormal[1]]
         InterPoints = [[RootPos[0] + BorderDirection[0] * i * BorderLength / StepNum,
                         RootPos[1] + BorderDirection[1] * i * BorderLength / StepNum] for i in range(1, StepNum)]
-        InterDistances = [GetDistanceOnDirection(Pos, BorderNormal, MaxDistance) for Pos in InterPoints]
+        InterDistances = [GetDistanceOnDirection(Pos, BorderNormal, MaxDistance, [1, 5]) for Pos in InterPoints]
 
         if min(InterDistances) == MaxDistance:
             return False, EndPos
 
-        MaxDistance = max(InterDistances)
-        MaxIndex = InterDistances.index(MaxDistance)
+        MaxIndex = InterDistances.index(max(InterDistances))
         InterPoint = InterPoints[MaxIndex]
         LoopTime = 0
         while True:
@@ -433,7 +451,7 @@ def mouse_event(event, x, y, flags, param):
             building = FBuilding(0, 30, 30, [x / zoom, y / zoom])
             building.RoadConquest()
             building.RegionConquest()
-            building.DrawLine(img_copy, zoom)
+            building.DrawLine(img_copy, zoom, (255, 255, 0))
             cv2.circle(img_copy, (x, y), 3, (0, 0, 255), -1)
             cv2.imshow('img', img_copy)
     elif event == cv2.EVENT_LBUTTONDOWN:
@@ -443,19 +461,41 @@ def mouse_event(event, x, y, flags, param):
     lock.release()
 
 
+def generate_parcel(Building):
+    Building.Init()
+    Building.RoadConquest()
+    Building.RegionConquest()
+    # borders = np.where(Landmarks == 5)
+    # img[borders[1], borders[0]] = [0, 255, 255]
+    Building.End()
+
+
 if __name__ == '__main__':
     load_data_from_png('parcel_real_h.png')
-    img = cv2.imread('parcel_real_h.png')
     MarkNeighborsOfAllBuildings()
-    Indices = range(103, 147)
-    for Index in Indices:
-        Buildings[Index].Init()
-        Buildings[Index].RoadConquest()
-        Buildings[Index].RegionConquest()
-        Buildings[Index].End()
-        Buildings[Index].DrawLine(img, 1)
+
+    indices = [64]
+    # indices = range(0, 146)
+    for Building in Buildings:
+        generate_parcel(Building)
+    for Building in Buildings:
+        if Building.Redo:
+            Building.Borders.clear()
+            generate_parcel(Building)
+    img = cv2.imread('parcel_real_h.png')
+    colors = [(200, 200, 255), (0, 255, 255), (255, 255, 0)]
+    for Building in Buildings:
+        if Building.Width == 15:
+            color = 0
+        elif Building.Width == 25:
+            color = 1
+        else:
+            color = 2
+        Building.DrawLine(img, 1, colors[color])
+    img = cv2.resize(img, (1608, 1034), interpolation=cv2.INTER_NEAREST)
     cv2.imshow('img', img)
     cv2.waitKey(0)
+    cv2.imwrite('geo_divide.png', img)
 
     # # 单个地块生成测试
     # img = cv2.imread('parcel_geo_test.png')

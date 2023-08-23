@@ -16,18 +16,14 @@ def load_data_from_png(path):
     Landmarks = np.zeros((img.shape[1], img.shape[0]), np.uint8)
     for x in range(img.shape[1]):
         for y in range(img.shape[0]):
-            if img[y, x, 0] == 255 and img[y, x, 1] == 0 and img[y, x, 2] == 0:
-                Landmarks[x, y] = 1
+            if img[y, x, 0] == 0 and img[y, x, 1] == 255 and img[y, x, 2] == 0:
+                Landmarks[x, y] = 31
+            elif img[y, x, 0] == 255 and img[y, x, 1] == 0 and img[y, x, 2] == 0:
+                Landmarks[x, y] = 32
             elif img[y, x, 0] == 0 and img[y, x, 1] == 0 and img[y, x, 2] == 255:
-                Landmarks[x, y] = 3
-            # if img[y, x, 0] == 0 and img[y, x, 1] == 255 and img[y, x, 2] == 0:
-            #     Landmarks[x, y] = 31
-            # elif img[y, x, 0] == 255 and img[y, x, 1] == 0 and img[y, x, 2] == 0:
-            #     Landmarks[x, y] = 32
-            # elif img[y, x, 0] == 0 and img[y, x, 1] == 0 and img[y, x, 2] == 255:
-            #     Landmarks[x, y] = 33
-            # elif img[y, x, 0] == 255 and img[y, x, 1] == 255 and img[y, x, 2] == 255:
-            #     Landmarks[x, y] = 1
+                Landmarks[x, y] = 33
+            elif img[y, x, 0] == 255 and img[y, x, 1] == 255 and img[y, x, 2] == 255:
+                Landmarks[x, y] = 1
 
 
 def GetNodesInRadius(Node, Radius, Type):
@@ -281,7 +277,7 @@ class Building:
             OccupiedMap[Node[0], Node[1]] = self.Index
             self.__RegionConqueredDist[EndNodeIndex] += 1
             img[Node[1], Node[0]] = color[self.__RegionConqueredDist[EndNodeIndex]]
-        elif Landmarks[Node[0], Node[1]] in [3] or \
+        elif Landmarks[Node[0], Node[1]] in [31, 32, 33] or \
                 (Landmarks[Node[0], Node[1]] == 4 and OccupiedMap[Node[0], Node[1]] == self.Index):
             self.__RegionConqueredDist[EndNodeIndex] += 1
         else:
@@ -360,8 +356,8 @@ def RoadConquest(OccupiedMap: dict):
         if np.all(EndFlag):
             break
 
-    for Building in Buildings:
-        Building.RoadConquestSupplement(OccupiedMap)
+    # for Building in Buildings:
+    #     Building.RoadConquestSupplement(OccupiedMap)
 
 
 def RegionConquest(OccupiedMap: dict):
@@ -381,33 +377,33 @@ def RegionConquest(OccupiedMap: dict):
 
 
 if __name__ == '__main__':
-    file = 'parcel.png'
+    file = 'parcel_real_h.png'
     load_data_from_png(file)
     img = cv2.imread(file)
     hashmap = dict()
 
-    buildings1 = np.where(Landmarks == 3)
-    # buildings2 = np.where(Landmarks == 32)
-    # buildings3 = np.where(Landmarks == 33)
+    buildings1 = np.where(Landmarks == 31)
+    buildings2 = np.where(Landmarks == 32)
+    buildings3 = np.where(Landmarks == 33)
     size1 = len(buildings1[0])
-    # size2 = len(buildings2[0])
-    # size3 = len(buildings3[0])
-    color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size1)]
+    size2 = len(buildings2[0])
+    size3 = len(buildings3[0])
+    color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size1 + size2 + size3)]
 
-    radius = 15
+    radius = 10
     target = range(size1)
     for i, x in enumerate(target):
         Buildings.append(Building(i, radius, [buildings1[0][x], buildings1[1][x]]))
 
-    # radius = 15
-    # target = range(size2)
-    # for i, x in enumerate(target):
-    #     Buildings.append(Building(i + size1, radius, [buildings2[0][x], buildings2[1][x]]))
-    #
-    # radius = 20
-    # target = range(size3)
-    # for i, x in enumerate(target):
-    #     Buildings.append(Building(i + size1 + size2, radius, [buildings3[0][x], buildings3[1][x]]))
+    radius = 15
+    target = range(size2)
+    for i, x in enumerate(target):
+        Buildings.append(Building(i + size1, radius, [buildings2[0][x], buildings2[1][x]]))
+
+    radius = 20
+    target = range(size3)
+    for i, x in enumerate(target):
+        Buildings.append(Building(i + size1 + size2, radius, [buildings3[0][x], buildings3[1][x]]))
 
     RoadConquest(hashmap)
     RegionConquest(hashmap)
@@ -422,3 +418,4 @@ if __name__ == '__main__':
     img = cv2.resize(img, (img.shape[1] * 2, img.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
     cv2.imshow('img', img)
     cv2.waitKey(0)
+
