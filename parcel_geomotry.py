@@ -30,7 +30,7 @@ def load_data_from_png(path):
         Buildings.append(FBuilding(i + size, 50, 50, [buildings3[1][i], buildings3[0][i]]))
     size = len(Buildings)
     for i in range(len(buildings4[0])):
-        Buildings.append(FBuilding(i + size, 100, 100, [buildings4[1][i], buildings4[0][i]]))
+        Buildings.append(FBuilding(i + size, 120, 120, [buildings4[1][i], buildings4[0][i]]))
 
 
 def MarkNeighborsOfAllBuildings():

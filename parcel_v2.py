@@ -409,7 +409,7 @@ if __name__ == '__main__':
     for i, x in enumerate(target):
         Buildings.append(Building(i + size1 + size2, radius, [buildings3[0][x], buildings3[1][x]]))
 
-    radius = 40
+    radius = 60
     target = range(size4)
     for i, x in enumerate(target):
         Buildings.append(Building(i + size1 + size2 + size3, radius, [buildings4[0][x], buildings4[1][x]]))
