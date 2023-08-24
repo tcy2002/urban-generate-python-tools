@@ -507,51 +507,51 @@ def load_raw_png(path, out_path):
 if __name__ == '__main__':
     # load_raw_png('parcel_real_raw.png', 'parcel_real_h2.png')
 
-    # load_data_from_png('parcel_real2.png')
-    # img = cv2.imread('parcel_real2.png')
-    # MarkNeighborsOfAllBuildings()
-    #
-    # indices = [118]
-    # # indices = range(0, len(Buildings))
-    # for index in indices:
-    #     generate_parcel(Buildings[index])
-    # for index in indices:
-    #     if Buildings[index].Redo:
-    #         Buildings[index].Borders.clear()
-    #         generate_parcel(Buildings[index])
-    # for index in indices:
-    #     if Buildings[index].Width == 15:
-    #         color = (255, 255, 0)
-    #     elif Buildings[index].Width == 25:
-    #         color = (255, 200, 150)
-    #     elif Buildings[index].Width == 50:
-    #         color = (200, 200, 255)
-    #     else:
-    #         color = (0, 200, 255)
-    #     Buildings[index].DrawLine(img, 1, color, 1)
-    # img = cv2.resize(img, (img.shape[1] * 2, img.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
-    # cv2.imshow('img', img)
-    # cv2.waitKey(0)
-    # cv2.imwrite('geo_divide.png', img)
+    load_data_from_png('parcel_real2.png')
+    img = cv2.imread('parcel_real2.png')
+    MarkNeighborsOfAllBuildings()
 
-    # 单个地块生成测试
-    load_data_from_png('parcel_geo.png')
-    img = cv2.imread('parcel_geo.png')
-    img = cv2.resize(img, (1000, 1000), interpolation=cv2.INTER_NEAREST)
-    zoom = 5
-    mouse_state = 0
-    cv2.namedWindow('img')
-    cv2.setMouseCallback('img', mouse_event)
+    # indices = [118]
+    indices = range(0, len(Buildings))
+    for index in indices:
+        generate_parcel(Buildings[index])
+    for index in indices:
+        if Buildings[index].Redo:
+            Buildings[index].Borders.clear()
+            generate_parcel(Buildings[index])
+    for index in indices:
+        if Buildings[index].Width == 15:
+            color = (255, 255, 0)
+        elif Buildings[index].Width == 25:
+            color = (255, 200, 150)
+        elif Buildings[index].Width == 50:
+            color = (200, 200, 255)
+        else:
+            color = (0, 200, 255)
+        Buildings[index].DrawLine(img, 1, color, 1)
+    img = cv2.resize(img, (img.shape[1] * 2, img.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
     cv2.imshow('img', img)
     cv2.waitKey(0)
-    # pos = (440, 377)
-    # building = FBuilding(0, 30, 30, (pos[0] / zoom, pos[1] / zoom))
-    # building.RoadConquest()
-    # building.RegionConquest()
-    # building.DrawLine(img, zoom, (255, 255, 0), 2)
-    # cv2.circle(img, pos, 3, (0, 0, 255), -1)
+    cv2.imwrite('geo_divide.png', img)
+
+    # # 单个地块生成测试
+    # load_data_from_png('parcel_geo.png')
+    # img = cv2.imread('parcel_geo.png')
+    # img = cv2.resize(img, (1000, 1000), interpolation=cv2.INTER_NEAREST)
+    # zoom = 5
+    # mouse_state = 0
+    # cv2.namedWindow('img')
+    # cv2.setMouseCallback('img', mouse_event)
     # cv2.imshow('img', img)
     # cv2.waitKey(0)
+    # # pos = (440, 377)
+    # # building = FBuilding(0, 30, 30, (pos[0] / zoom, pos[1] / zoom))
+    # # building.RoadConquest()
+    # # building.RegionConquest()
+    # # building.DrawLine(img, zoom, (255, 255, 0), 2)
+    # # cv2.circle(img, pos, 3, (0, 0, 255), -1)
+    # # cv2.imshow('img', img)
+    # # cv2.waitKey(0)
 
     # # 检查射线经过的像素的的情况
     # img = np.zeros((10, 10, 3), np.uint8)
