@@ -510,7 +510,6 @@ if __name__ == '__main__':
     load_data_from_png('parcel_real2.png')
     img = cv2.imread('parcel_real2.png')
     MarkNeighborsOfAllBuildings()
-
     # indices = [118]
     indices = range(0, len(Buildings))
     for index in indices:
