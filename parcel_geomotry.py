@@ -156,9 +156,9 @@ def GetDistanceOnDirection(RootPos, Direction, MaxDistance, Types):
     while True:
         CurrentNode, CurrentPos = GetNextIntersectNode(CurrentNode, CurrentPos, Direction)
         Length = Distance(CurrentPos, RootPos)
-        if Length > MaxDistance or not CheckNode(CurrentNode):
+        if Length > MaxDistance:
             return MaxDistance
-        if Landmarks[CurrentNode[0], CurrentNode[1]] in Types:
+        if not CheckNode(CurrentNode) or Landmarks[CurrentNode[0], CurrentNode[1]] in Types:
             return Length
 
 
@@ -196,13 +196,13 @@ class FBuilding:
         self.__Direction = [0, 1]
         self.__RoadEndPos1 = [0, 0]
         self.__RoadEndPos2 = [0, 0]
-        self.__Neighbors = dict()
+        self.Neighbors = dict()
         self.__VirtualBorderNodes = []
         self.__NearestRoadNode = GetNearestNode(Center, GetNodesInRadius(Center, Length, [1]))
 
     def AddNeighbor(self, Index):
         global Buildings
-        self.__Neighbors[Index] = Buildings[Index]
+        self.Neighbors[Index] = Buildings[Index]
 
     def CheckLine(self, StartPos, EndPos):
         IntersectNodes = GetIntersectNodes(StartPos, EndPos)
@@ -225,15 +225,15 @@ class FBuilding:
                     Landmarks[Node[0], Node[1]] = 3
                     img[Node[1], Node[0]] = [0, 255, 255]
 
-    def DrawLine(self, img, zoom, color):
+    def DrawLine(self, img, zoom, color, width):
         if len(self.Borders) == 0:
             return
         for Start, End in self.Borders:
             cv2.line(img, (int(Start[0] * zoom + zoom * 0.5), int(Start[1] * zoom + zoom * 0.5)),
-                     (int(End[0] * zoom + zoom * 0.5), int(End[1] * zoom + zoom * 0.5)), color, 1)
+                     (int(End[0] * zoom + zoom * 0.5), int(End[1] * zoom + zoom * 0.5)), color, width)
 
     def Init(self):
-        for Neighbor in self.__Neighbors.values():
+        for Neighbor in self.Neighbors.values():
             if not Neighbor.__Valid:
                 continue
 
@@ -269,8 +269,8 @@ class FBuilding:
         if self.__NearestRoadNode != [-1, -1]:
             self.__Direction = Normalize([self.Center[0] - self.__NearestRoadNode[0],
                                           self.Center[1] - self.__NearestRoadNode[1]])
-            RootPos = [self.__NearestRoadNode[0] + self.__Direction[0] * 3,
-                       self.__NearestRoadNode[1] + self.__Direction[1] * 3]
+            RootPos = [self.__NearestRoadNode[0] + self.__Direction[0] * 2,
+                       self.__NearestRoadNode[1] + self.__Direction[1] * 2]
         else:
             self.__Direction = [0, 1]
             RootPos = [self.Center[0],
@@ -293,7 +293,7 @@ class FBuilding:
         elif StepNum1 + StepNum2 < StepNum:
             self.Borders.clear()
             self.__Valid = False
-            for Neighbor in self.__Neighbors.values():
+            for Neighbor in self.Neighbors.values():
                 Neighbor.Redo = True
 
     def RoadConquestOnOneSide(self, RootPos, Direction, StepNum, StepLength):
@@ -332,21 +332,20 @@ class FBuilding:
         self.RegionConquestOnTop(TopPos1, TopPos2, MiddlePos, round(Length / (self.Width / 5)) + 1)
 
     def RegionConquestOnOneSide(self, RootPos, Normal, Length):
-        TopPos = self.RegionConquestFindTopPos(RootPos, Normal, 6, Length / 6)
-
-        MaxAngle = 40
-        MaxDistance = Length * np.sin(np.radians(MaxAngle))
-        RoadNodes = GetNodesInRadius(TopPos, MaxDistance, [1, 5])
-        if len(RoadNodes) == 0:
-            self.Borders.append([RootPos, TopPos])
-            return TopPos
-
-        Found, MiddlePos = self.RegionConquestFindMiddlePos(RootPos, TopPos, Normal, MaxAngle)
+        TopPos, Found, MiddlePos = self.RegionConquestFindTopPos(RootPos, Normal, 6, Length / 6)
+        if not Found:
+            MaxAngle = 40
+            MaxDistance = Length * np.sin(np.radians(MaxAngle))
+            RoadNodes = GetNodesInRadius(TopPos, MaxDistance, [1, 5])
+            if len(RoadNodes) == 0:
+                self.Borders.append([RootPos, TopPos])
+                return TopPos
+            Found, MiddlePos = self.RegionConquestFindMiddlePos(RootPos, TopPos, Normal, MaxAngle)
         if Found:
             self.Borders.append([MiddlePos, TopPos])
 
         EndPos = MiddlePos if Found else TopPos
-        Found, InterPos = self.RegionConquestFindInterPos(RootPos, EndPos, Normal, MaxDistance, 6)
+        Found, InterPos = self.RegionConquestFindInterPos(RootPos, EndPos, Normal, self.Width / 2, 6)
 
         if Found:
             self.Borders.append([RootPos, InterPos])
@@ -381,6 +380,10 @@ class FBuilding:
 
     def RegionConquestFindTopPos(self, RootPos, Direction, StepNum, StepLength):
         StartPos = RootPos
+        Points = []
+        Flag = True
+        EndFlag = False
+
         for i in range(StepNum):
             EndPos = [RootPos[0] + self.__Direction[0] * StepLength * (i + 1),
                       RootPos[1] + self.__Direction[1] * StepLength * (i + 1)]
@@ -388,15 +391,33 @@ class FBuilding:
             while True:
                 if self.CheckLine(StartPos, EndPos):
                     break
+                else:
+                    Flag = False
                 LoopTime += 1
                 if LoopTime > self.Width / 2:
-                    return StartPos
+                    EndFlag = True
+                    break
                 EndPos = [EndPos[0] + Direction[0], EndPos[1] + Direction[1]]
+            if EndFlag:
+                break
+            Points.append([EndPos, LoopTime])
             StartPos = EndPos
-        return StartPos
+
+        if Flag:
+            return StartPos, False, [-1, -1]
+        MaxValue = 0
+        MaxIndex = -1
+        for i in range(len(Points)):
+            if Points[i][1] > MaxValue:
+                MaxValue = Points[i][1]
+                MaxIndex = i
+        if MaxIndex == len(Points) - 1:
+            return StartPos, False, [-1, -1]
+        return StartPos, True, Points[MaxIndex][0]
 
     def RegionConquestFindMiddlePos(self, RootPos, TopPos, Normal, MaxAngle):
         FirstFlag = True
+
         while MaxAngle > 0:
             Rad = np.radians(MaxAngle)
             Tan = np.tan(Rad)
@@ -412,10 +433,10 @@ class FBuilding:
                 return True, MiddlePos
             FirstFlag = False
             MaxAngle -= 5
+
         return False, TopPos
 
     def RegionConquestFindInterPos(self, RootPos, EndPos, Normal, MaxDistance, StepNum):
-        global img
         BorderLength = Distance(RootPos, EndPos)
         BorderDirection = Normalize([EndPos[0] - RootPos[0], EndPos[1] - RootPos[1]])
         BorderNormal = [-BorderDirection[1], BorderDirection[0]]
@@ -437,9 +458,8 @@ class FBuilding:
                 return True, InterPoint
             LoopTime += 1
             if LoopTime > MaxDistance:
-                break
+                return True, TmpPoint
             InterPoint = TmpPoint
-        return False, EndPos
 
 
 def mouse_event(event, x, y, flags, param):
@@ -451,11 +471,12 @@ def mouse_event(event, x, y, flags, param):
     lock.acquire()
     if event == cv2.EVENT_MOUSEMOVE:
         if mouse_state == 1:
+            print(x, y)
             img_copy = np.copy(img)
             building = FBuilding(0, 30, 30, [x / zoom, y / zoom])
             building.RoadConquest()
             building.RegionConquest()
-            building.DrawLine(img_copy, zoom, (255, 255, 0))
+            building.DrawLine(img_copy, zoom, (255, 255, 0), 2)
             cv2.circle(img_copy, (x, y), 3, (0, 0, 255), -1)
             cv2.imshow('img', img_copy)
     elif event == cv2.EVENT_LBUTTONDOWN:
@@ -466,6 +487,7 @@ def mouse_event(event, x, y, flags, param):
 
 
 def generate_parcel(Building):
+    global img
     Building.Init()
     Building.RoadConquest()
     Building.RegionConquest()
@@ -485,41 +507,49 @@ def load_raw_png(path, out_path):
 if __name__ == '__main__':
     # load_raw_png('parcel_real_raw.png', 'parcel_real_h2.png')
 
-    load_data_from_png('parcel_real2.png')
-    MarkNeighborsOfAllBuildings()
+    # load_data_from_png('parcel_real2.png')
+    # img = cv2.imread('parcel_real2.png')
+    # MarkNeighborsOfAllBuildings()
+    #
+    # indices = [118]
+    # # indices = range(0, len(Buildings))
+    # for index in indices:
+    #     generate_parcel(Buildings[index])
+    # for index in indices:
+    #     if Buildings[index].Redo:
+    #         Buildings[index].Borders.clear()
+    #         generate_parcel(Buildings[index])
+    # for index in indices:
+    #     if Buildings[index].Width == 15:
+    #         color = (255, 255, 0)
+    #     elif Buildings[index].Width == 25:
+    #         color = (255, 200, 150)
+    #     elif Buildings[index].Width == 50:
+    #         color = (200, 200, 255)
+    #     else:
+    #         color = (0, 200, 255)
+    #     Buildings[index].DrawLine(img, 1, color, 1)
+    # img = cv2.resize(img, (img.shape[1] * 2, img.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
+    # cv2.imshow('img', img)
+    # cv2.waitKey(0)
+    # cv2.imwrite('geo_divide.png', img)
 
-    # indices = [160]
-    indices = range(0, len(Buildings))
-    for index in indices:
-        generate_parcel(Buildings[index])
-    for index in indices:
-        if Buildings[index].Redo:
-            Buildings[index].Borders.clear()
-            generate_parcel(Buildings[index])
-    img = cv2.imread('parcel_real2.png')
-    colors = [(200, 200, 255), (0, 255, 255), (255, 255, 0), (0, 200, 255)]
-    for index in indices:
-        if Buildings[index].Width == 15:
-            color = 0
-        elif Buildings[index].Width == 25:
-            color = 1
-        elif Buildings[index].Width == 50:
-            color = 2
-        else:
-            color = 3
-        Buildings[index].DrawLine(img, 1, colors[color])
-    img = cv2.resize(img, (img.shape[1] * 2, img.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
+    # 单个地块生成测试
+    load_data_from_png('parcel_geo.png')
+    img = cv2.imread('parcel_geo.png')
+    img = cv2.resize(img, (1000, 1000), interpolation=cv2.INTER_NEAREST)
+    zoom = 5
+    mouse_state = 0
+    cv2.namedWindow('img')
+    cv2.setMouseCallback('img', mouse_event)
     cv2.imshow('img', img)
     cv2.waitKey(0)
-    cv2.imwrite('geo_divide.png', img)
-
-    # # 单个地块生成测试
-    # img = cv2.imread('parcel_geo_test.png')
-    # img = cv2.resize(img, (1000, 1000), interpolation=cv2.INTER_NEAREST)
-    # zoom = 5
-    # mouse_state = 0
-    # cv2.namedWindow('img')
-    # cv2.setMouseCallback('img', mouse_event)
+    # pos = (440, 377)
+    # building = FBuilding(0, 30, 30, (pos[0] / zoom, pos[1] / zoom))
+    # building.RoadConquest()
+    # building.RegionConquest()
+    # building.DrawLine(img, zoom, (255, 255, 0), 2)
+    # cv2.circle(img, pos, 3, (0, 0, 255), -1)
     # cv2.imshow('img', img)
     # cv2.waitKey(0)
 
