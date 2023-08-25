@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 from numpy.random import random
+import time
 
 # algorithm of parcel division based on pixel image
 
@@ -379,6 +380,8 @@ def RegionConquest(OccupiedMap: dict):
 
 
 if __name__ == '__main__':
+    total_time = 0.0
+    start = time.time()
     file = 'parcel_real2.png'
     load_data_from_png(file)
     img = cv2.imread(file)
@@ -393,7 +396,11 @@ if __name__ == '__main__':
     size3 = len(buildings3[0])
     size4 = len(buildings4[0])
     color = [np.uint8([random() * 255, random() * 255, random() * 255]) for i in range(size1 + size2 + size3 + size4)]
+    end = time.time()
+    print('load data time: ', end - start)
+    total_time += end - start
 
+    start = time.time()
     radius = 10
     target = range(size1)
     for i, x in enumerate(target):
@@ -416,7 +423,11 @@ if __name__ == '__main__':
 
     RoadConquest(hashmap)
     RegionConquest(hashmap)
+    end = time.time()
+    print('generate time: ', end - start)
+    total_time += end - start
 
+    start = time.time()
     for Key, Value in hashmap.items():
         img[Key[1], Key[0]] = color[Value]
 
@@ -425,6 +436,19 @@ if __name__ == '__main__':
     #         img[Node[1], Node[0]] = color[Building.Index]
 
     img = cv2.resize(img, (img.shape[1] * 2, img.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
+    for i in range(size1):
+        cv2.circle(img, (buildings1[0][i] * 2, buildings1[1][i] * 2), 3, (0, 255, 0), -1)
+    for i in range(size2):
+        cv2.circle(img, (buildings2[0][i] * 2, buildings2[1][i] * 2), 3, (255, 0, 0), -1)
+    for i in range(size3):
+        cv2.circle(img, (buildings3[0][i] * 2, buildings3[1][i] * 2), 3, (0, 0, 255), -1)
+    for i in range(size4):
+        cv2.circle(img, (buildings4[0][i] * 2, buildings4[1][i] * 2), 3, (0, 255, 255), -1)
+    end = time.time()
+    print('draw time: ', end - start)
+    total_time += end - start
+    print('total time: ', total_time)
+
     cv2.imshow('img', img)
     cv2.waitKey(0)
     cv2.imwrite('pixel_grow.png', img)

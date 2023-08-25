@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import threading
+import time
 
 # algorithm of parcel division based on geometry
 
@@ -487,7 +488,6 @@ def mouse_event(event, x, y, flags, param):
 
 
 def generate_parcel(Building):
-    global img
     Building.Init()
     Building.RoadConquest()
     Building.RegionConquest()
@@ -507,9 +507,16 @@ def load_raw_png(path, out_path):
 if __name__ == '__main__':
     # load_raw_png('parcel_real_raw.png', 'parcel_real_h2.png')
 
+    total_time = 0.0
+    start = time.time()
     load_data_from_png('parcel_real2.png')
     img = cv2.imread('parcel_real2.png')
     MarkNeighborsOfAllBuildings()
+    end = time.time()
+    print('load data time: ', end - start, 's')
+    total_time += end - start
+
+    start = time.time()
     # indices = [118]
     indices = range(0, len(Buildings))
     for index in indices:
@@ -518,6 +525,12 @@ if __name__ == '__main__':
         if Buildings[index].Redo:
             Buildings[index].Borders.clear()
             generate_parcel(Buildings[index])
+            Buildings[index].Redo = False
+    end = time.time()
+    print('generate time: ', end - start, 's')
+    total_time += end - start
+
+    start = time.time()
     for index in indices:
         if Buildings[index].Width == 15:
             color = (255, 255, 0)
@@ -529,6 +542,21 @@ if __name__ == '__main__':
             color = (0, 200, 255)
         Buildings[index].DrawLine(img, 1, color, 1)
     img = cv2.resize(img, (img.shape[1] * 2, img.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
+    for index in indices:
+        if Buildings[index].Width == 15:
+            color = (0, 255, 0)
+        elif Buildings[index].Width == 25:
+            color = (255, 0, 0)
+        elif Buildings[index].Width == 50:
+            color = (0, 0, 255)
+        else:
+            color = (0, 255, 255)
+        cv2.circle(img, (int(Buildings[index].Center[0] * 2), int(Buildings[index].Center[1] * 2)), 3, color, -1)
+    end = time.time()
+    print('draw time: ', end - start, 's')
+    total_time += end - start
+    print('total time: ', total_time, 's')
+
     cv2.imshow('img', img)
     cv2.waitKey(0)
     cv2.imwrite('geo_divide.png', img)
