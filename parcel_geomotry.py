@@ -164,10 +164,12 @@ def GetDistanceOnDirection(RootPos, Direction, MaxDistance, Types):
 
 
 def GetIntersectNodes(RootPos, EndPos):
-    if EndPos[0] % 0.5 == 0.0:
-        EndPos[0] += 0.001
-    if EndPos[1] % 0.5 == 0.0:
-        EndPos[1] += 0.001
+    # if EndPos[0] % 0.5 == 0.0:
+    #     EndPos[0] += 0.001
+    # if EndPos[1] % 0.5 == 0.0:
+    #     EndPos[1] += 0.001
+    EndPos[0] += 0.001
+    EndPos[1] += 0.001
 
     RootNode = [round(RootPos[0]), round(RootPos[1])]
     EndNode = [round(EndPos[0]), round(EndPos[1])]
