@@ -199,13 +199,13 @@ class FBuilding:
         self.__Direction = [0, 1]
         self.__RoadEndPos1 = [0, 0]
         self.__RoadEndPos2 = [0, 0]
-        self.Neighbors = dict()
+        self.__Neighbors = dict()
         self.__VirtualBorderNodes = []
         self.__NearestRoadNode = GetNearestNode(Center, GetNodesInRadius(Center, Length, [1]))
 
     def AddNeighbor(self, Index):
         global Buildings
-        self.Neighbors[Index] = Buildings[Index]
+        self.__Neighbors[Index] = Buildings[Index]
 
     def CheckLine(self, StartPos, EndPos):
         IntersectNodes = GetIntersectNodes(StartPos, EndPos)
@@ -219,15 +219,6 @@ class FBuilding:
                 return False
         return True
 
-    def DrawPixel(self, img):
-        global Landmarks
-        for StartPos, EndPos in self.Borders:
-            IntersectNodes = GetIntersectNodes(StartPos, EndPos)
-            for Node in IntersectNodes:
-                if CheckNode(Node) and Landmarks[Node[0], Node[1]] == 0:
-                    Landmarks[Node[0], Node[1]] = 3
-                    img[Node[1], Node[0]] = [0, 255, 255]
-
     def DrawLine(self, img, zoom, color, width):
         if len(self.Borders) == 0:
             return
@@ -235,8 +226,14 @@ class FBuilding:
             cv2.line(img, (int(Start[0] * zoom + zoom * 0.5), int(Start[1] * zoom + zoom * 0.5)),
                      (int(End[0] * zoom + zoom * 0.5), int(End[1] * zoom + zoom * 0.5)), color, width)
 
+    def Generate(self):
+        self.Init()
+        self.RoadConquest()
+        self.RegionConquest()
+        self.End()
+
     def Init(self):
-        for Neighbor in self.Neighbors.values():
+        for Neighbor in self.__Neighbors.values():
             if not Neighbor.__Valid:
                 continue
 
@@ -296,7 +293,7 @@ class FBuilding:
         elif StepNum1 + StepNum2 < StepNum:
             self.Borders.clear()
             self.__Valid = False
-            for Neighbor in self.Neighbors.values():
+            for Neighbor in self.__Neighbors.values():
                 Neighbor.Redo = True
 
     def RoadConquestOnOneSide(self, RootPos, Direction, StepNum, StepLength):
@@ -489,15 +486,6 @@ def mouse_event(event, x, y, flags, param):
     lock.release()
 
 
-def generate_parcel(Building):
-    Building.Init()
-    Building.RoadConquest()
-    Building.RegionConquest()
-    # borders = np.where(Landmarks == 5)
-    # img[borders[1], borders[0]] = [0, 255, 255]
-    Building.End()
-
-
 def load_raw_png(path, out_path):
     img = cv2.imread(path)
     img[img != 255] = 0
@@ -522,11 +510,11 @@ if __name__ == '__main__':
     # indices = [118]
     indices = range(0, len(Buildings))
     for index in indices:
-        generate_parcel(Buildings[index])
+        Buildings[index].Generate()
     for index in indices:
         if Buildings[index].Redo:
             Buildings[index].Borders.clear()
-            generate_parcel(Buildings[index])
+            Buildings[index].Generate()
             Buildings[index].Redo = False
     end = time.time()
     print('generate time: ', end - start, 's')
