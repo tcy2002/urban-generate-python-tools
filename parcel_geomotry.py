@@ -40,6 +40,14 @@ def MarkNeighborsOfAllBuildings():
         for Other in Buildings:
             if Building.Index != Other.Index and \
                     Distance(Building.Center, Other.Center) < 2 * Building.Length:
+                IntersectNodes = GetIntersectNodes(Building.Center, Other.Center)
+                Flag = False
+                for Node in IntersectNodes:
+                    if CheckNode(Node) and Landmarks[Node[0], Node[1]] == 1:
+                        Flag = True
+                        break
+                if Flag:
+                    continue
                 Building.AddNeighbor(Other.Index)
                 Other.AddNeighbor(Building.Index)
 
@@ -228,22 +236,18 @@ class FBuilding:
 
     def Generate(self):
         self.Init()
-        self.RoadConquest()
-        self.RegionConquest()
+        RoadLeft, RoadRight = self.RoadConquest()
+        LeftSide, RightSide, TopSide = self.RegionConquest()
         self.End()
+        self.Borders.extend(RoadLeft)
+        self.Borders.extend(RoadRight)
+        self.Borders.extend(LeftSide)
+        self.Borders.extend(RightSide)
+        self.Borders.extend(TopSide)
 
     def Init(self):
         for Neighbor in self.__Neighbors.values():
             if not Neighbor.__Valid:
-                continue
-
-            IntersectNodes = GetIntersectNodes(self.Center, Neighbor.Center)
-            Flag = False
-            for Node in IntersectNodes:
-                if CheckNode(Node) and Landmarks[Node[0], Node[1]] == 1:
-                    Flag = True
-                    break
-            if Flag:
                 continue
 
             Rate = self.Length / (self.Length + Neighbor.Length)
@@ -264,8 +268,9 @@ class FBuilding:
             Landmarks[Node[0], Node[1]] = 0
 
     def RoadConquest(self):
+        global del_num
         if not self.__Valid:
-            return
+            return [], []
         if self.__NearestRoadNode != [-1, -1]:
             self.__Direction = Normalize([self.Center[0] - self.__NearestRoadNode[0],
                                           self.Center[1] - self.__NearestRoadNode[1]])
@@ -277,26 +282,35 @@ class FBuilding:
                        (self.Center[1] - self.Length / 2) if self.Center[1] - self.Length / 2 > 0 else 0]
 
         StepNum = 4
-        StepNum1, self.__RoadEndPos1 = self.RoadConquestOnOneSide(RootPos, [self.__Direction[1], -self.__Direction[0]],
-                                                                  StepNum, self.Width / (StepNum * 2))
-        StepNum2, self.__RoadEndPos2 = self.RoadConquestOnOneSide(RootPos, [-self.__Direction[1], self.__Direction[0]],
-                                                                  StepNum, self.Width / (StepNum * 2))
+        StepNum1, self.__RoadEndPos1, Borders1 = self.RoadConquestOnOneSide(RootPos,
+                                                                            [self.__Direction[1], -self.__Direction[0]],
+                                                                            StepNum, self.Width / (StepNum * 2))
+        StepNum2, self.__RoadEndPos2, Borders2 = self.RoadConquestOnOneSide(RootPos,
+                                                                            [-self.__Direction[1], self.__Direction[0]],
+                                                                            StepNum, self.Width / (StepNum * 2))
 
         if StepNum1 < StepNum and StepNum2 == StepNum:
-            _, self.__RoadEndPos2 = self.RoadConquestOnOneSide(self.__RoadEndPos2,
-                                                               [-self.__Direction[1], self.__Direction[0]],
-                                                               (StepNum - StepNum1) * 2, self.Width / (StepNum * 4))
+            _, self.__RoadEndPos2, Borders2S = self.RoadConquestOnOneSide(self.__RoadEndPos2,
+                                                                          [-self.__Direction[1], self.__Direction[0]],
+                                                                          (StepNum - StepNum1) * 2,
+                                                                          self.Width / (StepNum * 4))
+            Borders2.extend(Borders2S)
         elif StepNum1 == StepNum and StepNum2 < StepNum:
-            _, self.__RoadEndPos1 = self.RoadConquestOnOneSide(self.__RoadEndPos1,
-                                                               [self.__Direction[1], -self.__Direction[0]],
-                                                               (StepNum - StepNum2) * 2, self.Width / (StepNum * 4))
+            _, self.__RoadEndPos1, Borders1S = self.RoadConquestOnOneSide(self.__RoadEndPos1,
+                                                                          [self.__Direction[1], -self.__Direction[0]],
+                                                                          (StepNum - StepNum2) * 2,
+                                                                          self.Width / (StepNum * 4))
+            Borders1.extend(Borders1S)
         elif StepNum1 + StepNum2 < StepNum:
-            self.Borders.clear()
             self.__Valid = False
+            del_num += 1
             for Neighbor in self.__Neighbors.values():
                 Neighbor.Redo = True
+            return [], []
+        return Borders1, Borders2
 
     def RoadConquestOnOneSide(self, RootPos, Direction, StepNum, StepLength):
+        Borders = []
         for i in range(StepNum):
             EndPos = [RootPos[0] + Direction[0] * StepLength, RootPos[1] + Direction[1] * StepLength]
             LoopTime = 0
@@ -305,54 +319,58 @@ class FBuilding:
                     break
                 LoopTime += 1
                 if LoopTime > StepLength:
-                    return i, RootPos
+                    return i, RootPos, Borders
                 EndPos = [EndPos[0] + self.__Direction[0], EndPos[1] + self.__Direction[1]]
-            self.Borders.append([RootPos, EndPos])
+            Borders.append([RootPos, EndPos])
             RootPos = EndPos
-        return StepNum, RootPos
+        return StepNum, RootPos, Borders
 
     def RegionConquest(self):
         if not self.__Valid:
-            return
+            return [], [], []
 
         Diff = [self.__RoadEndPos1[0] - self.__RoadEndPos2[0], self.__RoadEndPos1[1] - self.__RoadEndPos2[1]]
         DiffOnDirection = Diff[0] * self.__Direction[0] + Diff[1] * self.__Direction[1]
-        TopPos1 = self.RegionConquestOnOneSide(self.__RoadEndPos1, [-self.__Direction[1], self.__Direction[0]],
-                                               self.Length - DiffOnDirection / 2)
-        TopPos2 = self.RegionConquestOnOneSide(self.__RoadEndPos2, [self.__Direction[1], -self.__Direction[0]],
-                                               self.Length + DiffOnDirection / 2)
+        TopPos1, Borders1 = self.RegionConquestOnOneSide(self.__RoadEndPos1,
+                                                         [-self.__Direction[1], self.__Direction[0]],
+                                                         self.Length - DiffOnDirection / 2)
+        TopPos2, Borders2 = self.RegionConquestOnOneSide(self.__RoadEndPos2,
+                                                         [self.__Direction[1], -self.__Direction[0]],
+                                                         self.Length + DiffOnDirection / 2)
 
         Length = Distance(TopPos1, TopPos2)
         if Length < 1:
-            return
+            return Borders1, Borders2, []
         MiddlePos = [(self.__RoadEndPos1[0] + self.__RoadEndPos2[0]) / 2,
                      (self.__RoadEndPos1[1] + self.__RoadEndPos2[1]) / 2]
         MiddlePos = [MiddlePos[0] + self.__Direction[0] * self.Length,
                      MiddlePos[1] + self.__Direction[1] * self.Length]
-        self.RegionConquestOnTop(TopPos1, TopPos2, MiddlePos, round(Length / (self.Width / 5)) + 1)
+        Borders3 = self.RegionConquestOnTop(TopPos1, TopPos2, MiddlePos, round(Length / (self.Width / 5)) + 1)
+        return Borders1, Borders2, Borders3
 
     def RegionConquestOnOneSide(self, RootPos, Normal, Length):
         TopPos, Found, MiddlePos = self.RegionConquestFindTopPos(RootPos, Normal, 6, Length / 6)
+        Borders = []
         if not Found:
             MaxAngle = 40
             MaxDistance = Length * np.sin(np.radians(MaxAngle))
             RoadNodes = GetNodesInRadius(TopPos, MaxDistance, [1, 5])
             if len(RoadNodes) == 0:
-                self.Borders.append([RootPos, TopPos])
-                return TopPos
+                Borders.append([RootPos, TopPos])
+                return TopPos, Borders
             Found, MiddlePos = self.RegionConquestFindMiddlePos(RootPos, TopPos, Normal, MaxAngle)
         if Found:
-            self.Borders.append([MiddlePos, TopPos])
+            Borders.append([MiddlePos, TopPos])
 
         EndPos = MiddlePos if Found else TopPos
         Found, InterPos = self.RegionConquestFindInterPos(RootPos, EndPos, Normal, self.Width / 2, 6)
 
         if Found:
-            self.Borders.append([RootPos, InterPos])
-            self.Borders.append([InterPos, EndPos])
+            Borders.append([RootPos, InterPos])
+            Borders.append([InterPos, EndPos])
         else:
-            self.Borders.append([RootPos, EndPos])
-        return TopPos
+            Borders.append([RootPos, EndPos])
+        return TopPos, Borders
 
     def RegionConquestOnTop(self, Pos1, Pos2, MiddlePos, StepNum):
         Direction = Normalize([Pos2[0] - Pos1[0], Pos2[1] - Pos1[1]])
@@ -366,6 +384,7 @@ class FBuilding:
             StartDirection = [-StartDirection[0], -StartDirection[1]]
 
         LastPos = Pos1
+        Borders = []
         for i in range(1, StepNum + 1):
             Pos = [StartPos[0] + StartDirection[0] * StepLength * i,
                    StartPos[1] + StartDirection[1] * StepLength * i] if i < StepNum else Pos2
@@ -375,8 +394,9 @@ class FBuilding:
                 if self.CheckLine(LastPos, Pos) or LoopTime > self.Length:
                     break
                 Pos = [Pos[0] - self.__Direction[0], Pos[1] - self.__Direction[1]]
-            self.Borders.append([LastPos, Pos])
+            Borders.append([LastPos, Pos])
             LastPos = Pos
+        return Borders
 
     def RegionConquestFindTopPos(self, RootPos, Direction, StepNum, StepLength):
         StartPos = RootPos
@@ -503,22 +523,32 @@ if __name__ == '__main__':
     img = cv2.imread('parcel_real2.png')
     MarkNeighborsOfAllBuildings()
     end = time.time()
+    print('building num: ', len(Buildings))
     print('load data time: ', end - start, 's')
     total_time += end - start
 
     start = time.time()
+    del_num = 0
     # indices = [118]
     indices = range(0, len(Buildings))
     for index in indices:
         Buildings[index].Generate()
+    end = time.time()
+    print('generate time: ', end - start, 's')
+
+    start = time.time()
+    Num = 0
     for index in indices:
         if Buildings[index].Redo:
+            Num += 1
             Buildings[index].Borders.clear()
             Buildings[index].Generate()
             Buildings[index].Redo = False
-    end = time.time()
-    print('generate time: ', end - start, 's')
     total_time += end - start
+    end = time.time()
+    print('rejected num: ', del_num)
+    print('regenerate num: ', Num)
+    print('regenerate time: ', end - start, 's')
 
     start = time.time()
     for index in indices:
