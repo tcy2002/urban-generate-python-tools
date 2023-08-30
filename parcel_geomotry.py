@@ -228,22 +228,65 @@ class FBuilding:
         return True
 
     def DrawLine(self, img, zoom, color, width):
-        if len(self.Borders) == 0:
+        Size = len(self.Borders)
+        if Size == 0:
             return
-        for Start, End in self.Borders:
-            cv2.line(img, (int(Start[0] * zoom + zoom * 0.5), int(Start[1] * zoom + zoom * 0.5)),
-                     (int(End[0] * zoom + zoom * 0.5), int(End[1] * zoom + zoom * 0.5)), color, width)
+        for i in range(0, Size, 2):
+            cv2.line(img, (int(self.Borders[i][0] * zoom + zoom * 0.5), int(self.Borders[i][1] * zoom + zoom * 0.5)),
+                     (int(self.Borders[i + 1][0] * zoom + zoom * 0.5), int(self.Borders[i + 1][1] * zoom + zoom * 0.5)),
+                     color, width)
+
+    def Resample(self, Segments, StepLength):
+        TotalLength = 0
+        Size = len(Segments)
+        if Size == 0:
+            return []
+        Lengths = [0.0] * (Size // 2)
+        for i in range(0, Size, 2):
+            Length = Distance(Segments[i], Segments[i + 1])
+            TotalLength += Length
+            Lengths[i // 2] = Length
+
+        StepLength = TotalLength / max(round(TotalLength / StepLength), 1)
+        CurrentLength = 0
+        CurrentIndex = 0
+        NextStart = StartPos = Segments[0]
+        ResampledSegments = []
+        while True:
+            Length = Lengths[CurrentIndex // 2]
+            if CurrentLength + Length < StepLength - 0.001:
+                CurrentLength += Length
+                CurrentIndex += 2
+                if CurrentIndex >= Size:
+                    break
+                NextStart = Segments[CurrentIndex]
+            else:
+                Rate = (StepLength - CurrentLength) / Length
+                EndPos = Lerp(NextStart, Segments[CurrentIndex + 1], 1 - Rate)
+                ResampledSegments.append(StartPos)
+                ResampledSegments.append(EndPos)
+                Lengths[CurrentIndex // 2] = Length * (1 - Rate)
+                CurrentLength = 0
+                NextStart = StartPos = EndPos
+
+        return ResampledSegments
 
     def Generate(self):
         self.Init()
-        RoadLeft, RoadRight = self.RoadConquest()
+        LeftRoad, RightRoad = self.RoadConquest()
         LeftSide, RightSide, TopSide = self.RegionConquest()
         self.End()
-        self.Borders.extend(RoadLeft)
-        self.Borders.extend(RoadRight)
-        self.Borders.extend(LeftSide)
-        self.Borders.extend(RightSide)
-        self.Borders.extend(TopSide)
+
+        # self.Borders.extend(LeftRoad)
+        # self.Borders.extend(RightRoad)
+        # self.Borders.extend(LeftSide)
+        # self.Borders.extend(RightSide)
+        # self.Borders.extend(TopSide)
+        self.Borders.extend(self.Resample(LeftRoad, 5))
+        self.Borders.extend(self.Resample(RightRoad, 5))
+        self.Borders.extend(self.Resample(LeftSide, 5))
+        self.Borders.extend(self.Resample(RightSide, 5))
+        self.Borders.extend(self.Resample(TopSide, 5))
 
     def Init(self):
         for Neighbor in self.__Neighbors.values():
@@ -266,6 +309,7 @@ class FBuilding:
         global Landmarks
         for Node in self.__VirtualBorderNodes:
             Landmarks[Node[0], Node[1]] = 0
+        self.__VirtualBorderNodes.clear()
 
     def RoadConquest(self):
         global del_num
@@ -321,7 +365,8 @@ class FBuilding:
                 if LoopTime > StepLength:
                     return i, RootPos, Borders
                 EndPos = [EndPos[0] + self.__Direction[0], EndPos[1] + self.__Direction[1]]
-            Borders.append([RootPos, EndPos])
+            Borders.append(RootPos)
+            Borders.append(EndPos)
             RootPos = EndPos
         return StepNum, RootPos, Borders
 
@@ -356,20 +401,25 @@ class FBuilding:
             MaxDistance = Length * np.sin(np.radians(MaxAngle))
             RoadNodes = GetNodesInRadius(TopPos, MaxDistance, [1, 5])
             if len(RoadNodes) == 0:
-                Borders.append([RootPos, TopPos])
+                Borders.append(RootPos)
+                Borders.append(TopPos)
                 return TopPos, Borders
             Found, MiddlePos = self.RegionConquestFindMiddlePos(RootPos, TopPos, Normal, MaxAngle)
         if Found:
-            Borders.append([MiddlePos, TopPos])
+            Borders.append(TopPos)
+            Borders.append(MiddlePos)
 
         EndPos = MiddlePos if Found else TopPos
         Found, InterPos = self.RegionConquestFindInterPos(RootPos, EndPos, Normal, self.Width / 2, 6)
 
         if Found:
-            Borders.append([RootPos, InterPos])
-            Borders.append([InterPos, EndPos])
+            Borders.append(EndPos)
+            Borders.append(InterPos)
+            Borders.append(InterPos)
+            Borders.append(RootPos)
         else:
-            Borders.append([RootPos, EndPos])
+            Borders.append(EndPos)
+            Borders.append(RootPos)
         return TopPos, Borders
 
     def RegionConquestOnTop(self, Pos1, Pos2, MiddlePos, StepNum):
@@ -394,7 +444,8 @@ class FBuilding:
                 if self.CheckLine(LastPos, Pos) or LoopTime > self.Length:
                     break
                 Pos = [Pos[0] - self.__Direction[0], Pos[1] - self.__Direction[1]]
-            Borders.append([LastPos, Pos])
+            Borders.append(LastPos)
+            Borders.append(Pos)
             LastPos = Pos
         return Borders
 
@@ -428,7 +479,7 @@ class FBuilding:
         MaxValue = 0
         MaxIndex = -1
         for i in range(len(Points)):
-            if Points[i][1] > MaxValue:
+            if Points[i][1] >= MaxValue:
                 MaxValue = Points[i][1]
                 MaxIndex = i
         if MaxIndex == len(Points) - 1:
@@ -535,6 +586,7 @@ if __name__ == '__main__':
         Buildings[index].Generate()
     end = time.time()
     print('generate time: ', end - start, 's')
+    total_time += end - start
 
     start = time.time()
     Num = 0
@@ -544,11 +596,11 @@ if __name__ == '__main__':
             Buildings[index].Borders.clear()
             Buildings[index].Generate()
             Buildings[index].Redo = False
-    total_time += end - start
     end = time.time()
     print('rejected num: ', del_num)
     print('regenerate num: ', Num)
     print('regenerate time: ', end - start, 's')
+    total_time += end - start
 
     start = time.time()
     for index in indices:
